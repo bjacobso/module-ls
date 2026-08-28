@@ -28,6 +28,8 @@ describe("module-ls CLI", () => {
     expect(tree).not.toContain("privateValue")
     expect(tree).not.toContain("ignored.ts")
     expect(tree).not.toContain(".hidden.ts")
+    expect(tree).toContain("two/")
+    expect(tree).not.toContain("deep.ts")
   })
 
   it("emits schema-versioned JSON for agents", () => {
@@ -35,12 +37,16 @@ describe("module-ls CLI", () => {
     const output = Schema.decodeUnknownSync(ModuleLsOutputSchema)(parsed)
     expect(output.schemaVersion).toBe(2)
     expect(output.roots[0]?.type).toBe("directory")
+    expect(JSON.stringify(output)).toContain("deep.ts")
   })
 
   it("supports hidden, module-only, depth, and ASCII flags", () => {
     expect(cli(fixture, "--hidden", "--color", "never")).toContain(".hidden.ts")
     expect(cli(fixture, "--symbols", "modules", "--color", "never")).not.toContain("interface Cache")
-    expect(cli(fixture, "--depth", "0", "--ascii", "--color", "never").trim()).toBe("sample/")
+    expect(cli(fixture, "--depth", "0", "--ascii", "--color", "never").trim()).toBe(
+      "sample/\n`-- …"
+    )
+    expect(cli(fixture, "--expand", "--color", "never")).toContain("deep.ts")
   })
 
   it("shows and extracts exact symbol ranges", () => {

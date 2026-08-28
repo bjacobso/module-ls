@@ -58,18 +58,19 @@ mls src --expand
 mls src --format json
 ```
 
-Tree output defaults to eight declarations per file and collapses files made
-entirely of re-exports. `--expand` disables both reductions. Every declaration
-includes a source line range.
+Tree output defaults to three directory levels and eight declarations per file,
+and collapses files made entirely of re-exports. Cutoff directories contain an
+explicit `…`. `--expand` disables all three reductions. JSON remains complete.
+Every declaration includes a source line range.
 
 | Option | Purpose | Default |
 | --- | --- | --- |
 | `--peek` | Show leading file documentation. | off |
 | `--peek-lines <n>` | Limit documentation lines and imply `--peek`. | `3` |
-| `--depth <n>` | Limit traversal below each root. | unlimited |
+| `--depth <n>` | Limit traversal below each root. | `3` for tree; unlimited for JSON |
 | `--symbols <level>` | Show `modules`, `public`, or `all`. | `public` |
 | `--max-symbols <n>` | Limit declarations shown per file. | `8` |
-| `--expand` | Show all declarations and barrel exports. | off |
+| `--expand` | Show all directories, declarations, and barrel exports. | off |
 | `--format <format>` | Produce `tree` or `json`. | `tree` |
 | `--hidden` | Include hidden entries. | off |
 | `--no-ignore` | Disable `.gitignore` and built-in ignores. | off |

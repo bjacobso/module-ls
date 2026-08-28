@@ -238,7 +238,8 @@ const walk = (
 
     const children = inspected
       .flatMap((result) => result.node === null ? [] : [result.node])
-      .filter((node) => node._tag !== "Directory" || node.children.length > 0)
+      .filter((node) => node._tag !== "Directory" || node.children.length > 0 ||
+        (context.options.depth !== null && depth + 1 >= context.options.depth))
       .sort((left, right) => {
         const leftDirectory = left._tag === "Directory"
         const rightDirectory = right._tag === "Directory"

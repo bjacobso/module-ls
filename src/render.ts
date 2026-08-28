@@ -80,7 +80,9 @@ const treeItem = (node: TreeNode, options: InspectOptions, color: boolean): Rend
     case "directory":
       return {
         label: paint(color, "blue", `${node.name}/`),
-        children: node.children.map((child) => treeItem(child, options, color))
+        children: node.children.length === 0 && options.depth !== null
+          ? [{ label: paint(color, "dim", "…"), children: [] }]
+          : node.children.map((child) => treeItem(child, options, color))
       }
     case "symlink":
       return { label: paint(color, "cyan", `${node.name}@`), children: [] }

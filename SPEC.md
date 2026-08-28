@@ -41,7 +41,7 @@ Inspection options are:
 | --- | --- | --- |
 | `--peek` | boolean | false |
 | `--peek-lines` | positive integer | 3 |
-| `--depth` | non-negative integer or unlimited | unlimited |
+| `--depth` | non-negative integer or unlimited | 3 for tree; unlimited for JSON |
 | `--symbols` | `modules`, `public`, `all` | `public` |
 | `--format` | `tree`, `json` | `tree` |
 | `--hidden` | boolean | false |
@@ -49,7 +49,7 @@ Inspection options are:
 | `--ascii` | boolean | false |
 | `--color` | `auto`, `always`, `never` | `auto` |
 | `--max-symbols` | non-negative integer or unlimited | 8 |
-| `--expand` | disables symbol limit and barrel collapse | false |
+| `--expand` | disables depth/symbol limits and barrel collapse | false |
 
 ## 3. Discovery and analysis
 
@@ -136,9 +136,11 @@ spawner service. A non-Git directory returns null statuses rather than failing.
 
 ## 6. Rendering and selection
 
-Tree output includes declaration line ranges. It shows at most `maxSymbols`
-declarations per file and appends `… N more`; all-re-export files collapse to
-`N re-exports`. `--expand` disables both reductions. JSON remains complete.
+Tree output includes declaration line ranges. It traverses three directory
+levels by default and marks cutoff directories with `…`. It shows at most
+`maxSymbols` declarations per file and appends `… N more`; all-re-export files
+collapse to `N re-exports`. `--expand` disables all reductions. JSON remains
+complete.
 
 Peek mode selects the first JSDoc, block, or contiguous line-comment block after
 an optional BOM, shebang, or triple-slash references. Markers and indentation are

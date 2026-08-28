@@ -8,6 +8,8 @@ import { run } from "./app.js"
 import { renderSelectedJson, renderSelectedSource, selectSource } from "./selection.js"
 import { serveExplorer } from "./server.js"
 
+const DEFAULT_TREE_DEPTH = 3
+
 const paths = Argument.string("path").pipe(
   Argument.variadic(),
   Argument.withDescription("Files or directories to inspect (defaults to the current directory)")
@@ -25,7 +27,7 @@ const peekLines = Flag.integer("peek-lines").pipe(
 
 const depth = Flag.integer("depth").pipe(
   Flag.optional,
-  Flag.withDescription("Maximum directory depth below each root")
+  Flag.withDescription(`Maximum directory depth below each root (tree default: ${DEFAULT_TREE_DEPTH})`)
 )
 
 const symbols = Flag.choice("symbols", ["modules", "public", "all"] as const).pipe(
@@ -65,7 +67,7 @@ const maxSymbols = Flag.integer("max-symbols").pipe(
 
 const expand = Flag.boolean("expand").pipe(
   Flag.withDefault(false),
-  Flag.withDescription("Show every declaration and expand barrel re-exports")
+  Flag.withDescription("Show every directory and declaration and expand barrel re-exports")
 )
 
 const inspectCommand = Command.make(
@@ -75,7 +77,9 @@ const inspectCommand = Command.make(
     roots: config.paths,
     peek: config.peek || Option.isSome(config.peekLines),
     peekLines: Option.getOrElse(config.peekLines, () => 3),
-    depth: Option.getOrNull(config.depth),
+    depth: Option.isSome(config.depth)
+      ? config.depth.value
+      : (config.format === "json" || config.expand) ? null : DEFAULT_TREE_DEPTH,
     symbols: config.symbols,
     format: config.format,
     hidden: config.hidden,
