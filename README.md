@@ -6,6 +6,8 @@ It combines the filesystem, exported modules, opening documentation, exact
 source ranges, and Git working-tree state into a compact CLI and a local code
 explorer. It is designed as roaming documentation for humans and coding agents.
 
+![module-ls exploring a TypeScript source directory](./assets/module-ls-tui.svg)
+
 ```text
 $ mls src --peek --color never
 src/

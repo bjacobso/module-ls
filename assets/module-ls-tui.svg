@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc" xml:space="preserve">
+  <title id="title">module-ls terminal interface</title>
+  <desc id="desc">A dark terminal window showing module-ls exploring a TypeScript source directory.</desc>
+  <defs>
+    <linearGradient id="page" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3f5f1"/>
+      <stop offset="1" stop-color="#e5e9e2"/>
+    </linearGradient>
+    <linearGradient id="terminal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171a1c"/>
+      <stop offset="1" stop-color="#111315"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="30" stdDeviation="35" flood-color="#1b211d" flood-opacity=".22"/>
+    </filter>
+    <clipPath id="windowClip">
+      <rect x="100" y="96" width="1400" height="808" rx="22"/>
+    </clipPath>
+    <style>
+      .ui { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .mono { font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, monospace; font-size: 29px; letter-spacing: -.35px; }
+      .muted { fill: #7f8985; }
+      .tree { fill: #6f7975; }
+      .file { fill: #f1f4f2; font-weight: 650; }
+      .symbol { fill: #c8d0cc; }
+      .range { fill: #7f8985; }
+      .accent { fill: #79d6b0; }
+      .cyan { fill: #7fc8d8; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#page)"/>
+  <circle cx="1440" cy="110" r="240" fill="#b9dfce" opacity=".20"/>
+  <circle cx="75" cy="920" r="285" fill="#c4d8d2" opacity=".23"/>
+
+  <g filter="url(#shadow)">
+    <rect x="100" y="96" width="1400" height="808" rx="22" fill="url(#terminal)"/>
+  </g>
+  <g clip-path="url(#windowClip)">
+    <rect x="100" y="96" width="1400" height="72" fill="#202426"/>
+    <path d="M100 167.5H1500" stroke="#2b3032"/>
+    <circle cx="142" cy="132" r="9" fill="#ff5f57"/>
+    <circle cx="174" cy="132" r="9" fill="#febc2e"/>
+    <circle cx="206" cy="132" r="9" fill="#28c840"/>
+    <text x="800" y="140" text-anchor="middle" class="ui" font-size="20" font-weight="600" fill="#909995">module-ls — src</text>
+
+    <g class="mono">
+      <text x="154" y="224"><tspan class="accent">❯</tspan><tspan fill="#e8ecea"> mls src </tspan><tspan class="muted">--peek --color never</tspan></text>
+
+      <text x="154" y="291" class="file">src/</text>
+
+      <text x="154" y="340"><tspan class="tree">├── </tspan><tspan class="file">analyzer.ts</tspan></text>
+      <text x="154" y="389"><tspan class="tree">│   ├── │ </tspan><tspan class="muted" font-style="italic">TypeScript source analysis.</tspan></text>
+      <text x="154" y="438"><tspan class="tree">│   ├── </tspan><tspan class="cyan">extractLeadingDocumentation</tspan><tspan class="symbol">(source)</tspan><tspan class="range"> [L53–64]</tspan></text>
+      <text x="154" y="487"><tspan class="tree">│   ├── </tspan><tspan class="cyan">contentFingerprint</tspan><tspan class="symbol">(source)</tspan><tspan class="range"> [L104–111]</tspan></text>
+      <text x="154" y="536"><tspan class="tree">│   └── </tspan><tspan class="cyan">analyze</tspan><tspan class="symbol">(discovery, options)</tspan><tspan class="range"> [L437–473]</tspan></text>
+
+      <text x="154" y="605"><tspan class="tree">├── </tspan><tspan class="file">model.ts</tspan></text>
+      <text x="154" y="654"><tspan class="tree">│   ├── </tspan><tspan class="symbol">DeclarationKindSchema</tspan><tspan class="range"> [L3–13]</tspan></text>
+      <text x="154" y="703"><tspan class="tree">│   ├── </tspan><tspan class="symbol">SourceRangeSchema</tspan><tspan class="range"> [L35–38]</tspan></text>
+      <text x="154" y="752"><tspan class="tree">│   └── </tspan><tspan class="muted">… 38 more</tspan></text>
+
+      <text x="154" y="821"><tspan class="tree">└── </tspan><tspan class="file">index.ts</tspan></text>
+      <text x="154" y="870"><tspan class="tree">    └── </tspan><tspan class="accent">56 re-exports</tspan></text>
+    </g>
+  </g>
+</svg>
