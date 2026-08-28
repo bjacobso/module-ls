@@ -53,9 +53,9 @@ Inspection options are:
 
 ## 3. Discovery and analysis
 
-Discovery uses `FileSystem` and `Path` from `@effect/platform`. Source is passed
-as strings into one in-memory ts-morph `Project`; ts-morph never traverses the
-real filesystem. Supported extensions are `.ts`, `.tsx`, `.mts`, `.cts`, `.js`,
+Discovery uses the Effect 4 `FileSystem` and `Path` services. Source is passed as
+strings into one in-memory ts-morph `Project`; ts-morph never traverses the real
+filesystem. Supported extensions are `.ts`, `.tsx`, `.mts`, `.cts`, `.js`,
 `.jsx`, `.mjs`, and `.cjs`.
 
 Traversal is deterministic: directories first, then files and symlinks, each in
@@ -126,8 +126,8 @@ selection covers the complete file.
 `ExplorerSnapshotSchema` version 1 flattens the repository into files with
 repository-relative paths, fingerprints, documentation, Git status, and
 declarations with qualified names and ranges. Git status comes from
-`git status --short --untracked-files=all` through the Effect platform command
-service. A non-Git directory returns null statuses rather than failing.
+`git status --short --untracked-files=all` through the Effect 4 child-process
+spawner service. A non-Git directory returns null statuses rather than failing.
 
 ## 6. Rendering and selection
 
@@ -157,14 +157,14 @@ and recomputes analysis and Git state on refresh.
 
 ## 8. FoldKit application
 
-`web/` is a native FoldKit SPA with its own Effect 4 RC dependency. It uses one
-Schema `Model`, one exhaustive Message union, named Commands for HTTP and
+`web/` is a native FoldKit SPA on the same Effect 4 RC as the Node package. It
+uses one Schema `Model`, one exhaustive Message union, named Commands for HTTP and
 navigation, `Runtime.makeApplication`, bidirectional route parsers, FoldKit
 virtual DOM, `@foldkit/ui` Button/Input helpers, FoldKit DevTools, Vite, and
 StyleX. It contains no React compatibility layer.
 
-The Node package remains on stable Effect 3. The pnpm workspace isolates these
-incompatible versions; schema-validated HTTP JSON is their only boundary.
+The workspace pins one Effect version across both packages. Schema-validated
+HTTP JSON remains the runtime boundary between the Node service and browser app.
 
 The UI provides filtering, file routes, qualified symbols, documentation,
 line-numbered exact source, fingerprints, refresh, and Git badges. It does not
@@ -173,13 +173,13 @@ edit files or render full patches.
 ## 9. Effect architecture
 
 ```text
-@effect/cli Command.run
+effect/unstable/cli Command.run
   -> Schema option decoding
-  -> @effect/platform discovery
+  -> Effect FileSystem / Path discovery
   -> in-memory ts-morph analysis
   -> schema model
   -> tree / JSON / selection / HTTP
-  -> NodeContext.layer
+  -> NodeServices.layer
   -> NodeRuntime.runMain
 ```
 

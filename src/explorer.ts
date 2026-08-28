@@ -1,5 +1,5 @@
-import { Command, CommandExecutor, FileSystem, Path } from "@effect/platform"
-import { Effect } from "effect"
+import { Effect, FileSystem, Path } from "effect"
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 
 import { inspect } from "./app.js"
 import { InspectError } from "./errors.js"
@@ -61,22 +61,34 @@ const collectFiles = (node: TreeNode): ReadonlyArray<ExplorerFile> => {
   }
 }
 
-const gitStatuses = (root: string): Effect.Effect<ReadonlyMap<string, string>, never, CommandExecutor.CommandExecutor> =>
-  Command.make("git", "status", "--short", "--untracked-files=all").pipe(
-    Command.workingDirectory(root),
-    Command.string,
-    Effect.map((output) => new Map(output.trim().split("\n").flatMap((line) => {
+const gitStatuses = (
+  root: string
+): Effect.Effect<ReadonlyMap<string, string>, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const output = yield* spawner.string(ChildProcess.make(
+      "git",
+      ["status", "--short", "--untracked-files=all"],
+      { cwd: root }
+    ))
+    return new Map(output.trim().split("\n").flatMap((line) => {
       if (line.length < 4) return []
       const status = line.slice(0, 2).trim() || "changed"
       const rawPath = line.slice(3).replace(/^.* -> /u, "")
       return [[rawPath.replaceAll("\\", "/"), status] as const]
-    }))),
-    Effect.catchAll(() => Effect.succeed(new Map()))
-  )
+    }))
+  }).pipe(Effect.match({
+    onFailure: () => new Map<string, string>(),
+    onSuccess: (statuses) => statuses
+  }))
 
 export const explorerSnapshot = (
   root: string
-): Effect.Effect<ExplorerSnapshot, InspectError, Path.Path | CommandExecutor.CommandExecutor | FileSystem.FileSystem> =>
+): Effect.Effect<
+  ExplorerSnapshot,
+  InspectError,
+  Path.Path | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const absoluteRoot = pathService.resolve(root)

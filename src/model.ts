@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const DeclarationKindSchema = Schema.Literal(
+export const DeclarationKindSchema = Schema.Literals([
   "namespace",
   "class",
   "function",
@@ -10,11 +10,11 @@ export const DeclarationKindSchema = Schema.Literal(
   "enum",
   "re-export",
   "default"
-)
+])
 
 export type DeclarationKind = typeof DeclarationKindSchema.Type
 
-export const VisibilitySchema = Schema.Literal("public", "private", "unknown")
+export const VisibilitySchema = Schema.Literals(["public", "private", "unknown"])
 export type Visibility = typeof VisibilitySchema.Type
 
 export const SourceLocationSchema = Schema.Struct({
@@ -52,7 +52,7 @@ export interface Declaration {
   readonly children: ReadonlyArray<Declaration>
 }
 
-export const DeclarationSchema: Schema.Schema<Declaration> = Schema.Struct({
+export const DeclarationSchema: Schema.Codec<Declaration> = Schema.Struct({
   kind: DeclarationKindSchema,
   name: Schema.String,
   visibility: VisibilitySchema,
@@ -62,11 +62,11 @@ export const DeclarationSchema: Schema.Schema<Declaration> = Schema.Struct({
   range: SourceRangeSchema,
   nameRange: Schema.NullOr(SourceRangeSchema),
   documentationRange: Schema.NullOr(SourceRangeSchema),
-  children: Schema.Array(Schema.suspend(() => DeclarationSchema))
+  children: Schema.Array(Schema.suspend((): Schema.Codec<Declaration> => DeclarationSchema))
 })
 
 export const DiagnosticSchema = Schema.Struct({
-  severity: Schema.Literal("warning", "error"),
+  severity: Schema.Literals(["warning", "error"]),
   code: Schema.String,
   message: Schema.String,
   path: Schema.NullOr(Schema.String),
@@ -86,11 +86,11 @@ export interface FileNode {
   readonly diagnostics: ReadonlyArray<Diagnostic>
 }
 
-export const FileNodeSchema: Schema.Schema<FileNode> = Schema.Struct({
+export const FileNodeSchema: Schema.Codec<FileNode> = Schema.Struct({
   type: Schema.Literal("file"),
   name: Schema.String,
   path: Schema.String,
-  language: Schema.NullOr(Schema.Literal("typescript", "javascript")),
+  language: Schema.NullOr(Schema.Literals(["typescript", "javascript"])),
   contentHash: Schema.NullOr(Schema.String),
   documentation: Schema.NullOr(Schema.String),
   declarations: Schema.Array(DeclarationSchema),
@@ -103,7 +103,7 @@ export interface SymlinkNode {
   readonly path: string
 }
 
-export const SymlinkNodeSchema: Schema.Schema<SymlinkNode> = Schema.Struct({
+export const SymlinkNodeSchema: Schema.Codec<SymlinkNode> = Schema.Struct({
   type: Schema.Literal("symlink"),
   name: Schema.String,
   path: Schema.String
@@ -118,20 +118,20 @@ export interface DirectoryNode {
 
 export type TreeNode = DirectoryNode | FileNode | SymlinkNode
 
-export const DirectoryNodeSchema: Schema.Schema<DirectoryNode> = Schema.Struct({
+export const DirectoryNodeSchema: Schema.Codec<DirectoryNode> = Schema.Struct({
   type: Schema.Literal("directory"),
   name: Schema.String,
   path: Schema.String,
   children: Schema.Array(
-    Schema.suspend((): Schema.Schema<TreeNode> => TreeNodeSchema)
+    Schema.suspend((): Schema.Codec<TreeNode> => TreeNodeSchema)
   )
 })
 
-export const TreeNodeSchema: Schema.Schema<TreeNode> = Schema.Union(
+export const TreeNodeSchema: Schema.Codec<TreeNode> = Schema.Union([
   DirectoryNodeSchema,
   FileNodeSchema,
   SymlinkNodeSchema
-)
+])
 
 export const ModuleLsOutputSchema = Schema.Struct({
   schemaVersion: Schema.Literal(2),
@@ -144,7 +144,7 @@ export interface ModuleLsOutput extends Schema.Schema.Type<typeof ModuleLsOutput
 export const SelectedSourceSchema = Schema.Struct({
   schemaVersion: Schema.Literal(2),
   path: Schema.String,
-  language: Schema.NullOr(Schema.Literal("typescript", "javascript")),
+  language: Schema.NullOr(Schema.Literals(["typescript", "javascript"])),
   qualifiedName: Schema.NullOr(Schema.String),
   kind: Schema.NullOr(DeclarationKindSchema),
   range: SourceRangeSchema,
@@ -167,7 +167,7 @@ export interface ExplorerDeclaration extends Schema.Schema.Type<typeof ExplorerD
 export const ExplorerFileSchema = Schema.Struct({
   path: Schema.String,
   name: Schema.String,
-  language: Schema.Literal("typescript", "javascript"),
+  language: Schema.Literals(["typescript", "javascript"]),
   contentHash: Schema.String,
   documentation: Schema.NullOr(Schema.String),
   gitStatus: Schema.NullOr(Schema.String),
@@ -185,27 +185,27 @@ export const ExplorerSnapshotSchema = Schema.Struct({
 
 export interface ExplorerSnapshot extends Schema.Schema.Type<typeof ExplorerSnapshotSchema> {}
 
-export const SymbolsSchema = Schema.Literal("modules", "public", "all")
+export const SymbolsSchema = Schema.Literals(["modules", "public", "all"])
 export type Symbols = typeof SymbolsSchema.Type
 
-export const OutputFormatSchema = Schema.Literal("tree", "json")
+export const OutputFormatSchema = Schema.Literals(["tree", "json"])
 export type OutputFormat = typeof OutputFormatSchema.Type
 
-export const ColorModeSchema = Schema.Literal("auto", "always", "never")
+export const ColorModeSchema = Schema.Literals(["auto", "always", "never"])
 export type ColorMode = typeof ColorModeSchema.Type
 
 export const InspectOptionsSchema = Schema.Struct({
   roots: Schema.Array(Schema.String),
   peek: Schema.Boolean,
-  peekLines: Schema.Number.pipe(Schema.int(), Schema.positive()),
-  depth: Schema.NullOr(Schema.NonNegativeInt),
+  peekLines: Schema.Int.check(Schema.isGreaterThan(0)),
+  depth: Schema.NullOr(Schema.Natural),
   symbols: SymbolsSchema,
   format: OutputFormatSchema,
   hidden: Schema.Boolean,
   noIgnore: Schema.Boolean,
   ascii: Schema.Boolean,
   color: ColorModeSchema,
-  maxSymbols: Schema.NullOr(Schema.NonNegativeInt),
+  maxSymbols: Schema.NullOr(Schema.Natural),
   collapseBarrels: Schema.Boolean
 })
 

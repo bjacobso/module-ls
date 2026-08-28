@@ -1,15 +1,12 @@
 import { createServer } from "node:http"
 
+import { NodeHttpServer } from "@effect/platform-node"
+import { Console, Effect, FileSystem, Layer, Path } from "effect"
 import {
-  FileSystem,
-  HttpRouter,
   HttpServer,
   HttpServerRequest,
-  HttpServerResponse,
-  Path
-} from "@effect/platform"
-import { NodeHttpServer } from "@effect/platform-node"
-import { Console, Effect, Layer } from "effect"
+  HttpServerResponse
+} from "effect/unstable/http"
 
 import { InspectError } from "./errors.js"
 import { explorerSnapshot } from "./explorer.js"
@@ -17,7 +14,7 @@ import { ExplorerSnapshotSchema, SelectedSourceSchema } from "./model.js"
 import { selectSource } from "./selection.js"
 
 const errorResponse = (cause: unknown, status = 500): HttpServerResponse.HttpServerResponse =>
-  HttpServerResponse.unsafeJson({
+  HttpServerResponse.jsonUnsafe({
     error: cause instanceof Error ? cause.message : String(cause)
   }, { status })
 
@@ -54,18 +51,27 @@ export const serveExplorer = (
       return yield* new InspectError({ path: requestedRoot, message: "Explorer root must be a directory" })
     }
     const builtStaticRoot = yield* pathService.fromFileUrl(new URL("./web", import.meta.url)).pipe(
-      Effect.catchAll(() => Effect.succeed(pathService.resolve("dist/web")))
+      Effect.match({
+        onFailure: () => pathService.resolve("dist/web"),
+        onSuccess: (path) => path
+      })
     )
     const localStaticRoot = pathService.resolve("dist/web")
     const staticRoot = yield* fs.stat(builtStaticRoot).pipe(
       Effect.as(builtStaticRoot),
-      Effect.catchAll(() => Effect.succeed(localStaticRoot))
+      Effect.match({
+        onFailure: () => localStaticRoot,
+        onSuccess: (path) => path
+      })
     )
 
     const treeHandler = explorerSnapshot(root).pipe(
       Effect.flatMap(HttpServerResponse.schemaJson(ExplorerSnapshotSchema)),
       Effect.map(noStore),
-      Effect.catchAll((cause) => Effect.succeed(errorResponse(cause)))
+      Effect.match({
+        onFailure: (cause) => errorResponse(cause),
+        onSuccess: (response) => response
+      })
     )
 
     const sourceHandler = Effect.gen(function*() {
@@ -77,7 +83,10 @@ export const serveExplorer = (
       if (path === null) return errorResponse("Path is outside the explorer root", 403)
       const selected = yield* selectSource(path, url.searchParams.get("symbol"))
       return noStore(yield* HttpServerResponse.schemaJson(SelectedSourceSchema)(selected))
-    }).pipe(Effect.catchAll((cause) => Effect.succeed(errorResponse(cause, 404))))
+    }).pipe(Effect.match({
+      onFailure: (cause) => errorResponse(cause, 404),
+      onSuccess: (response) => response
+    }))
 
     const staticHandler = Effect.gen(function*() {
       const request = yield* HttpServerRequest.HttpServerRequest
@@ -91,17 +100,22 @@ export const serveExplorer = (
         ? candidate
         : pathService.join(staticRoot, "index.html")
       return yield* HttpServerResponse.file(target)
-    }).pipe(Effect.catchAll(() => Effect.succeed(HttpServerResponse.text(
-      "Web explorer assets are missing. Run `pnpm build:web` first.",
-      { status: 503 }
-    ))))
+    }).pipe(Effect.match({
+      onFailure: () => HttpServerResponse.text(
+        "Web explorer assets are missing. Run `pnpm build:web` first.",
+        { status: 503 }
+      ),
+      onSuccess: (response) => response
+    }))
 
-    const router = HttpRouter.empty.pipe(
-      HttpRouter.get("/api/tree", treeHandler),
-      HttpRouter.get("/api/source", sourceHandler),
-      HttpRouter.get("/*", staticHandler)
-    )
-    const server = HttpServer.serve(router).pipe(
+    const application = Effect.gen(function*() {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname
+      if (pathname === "/api/tree") return yield* treeHandler
+      if (pathname === "/api/source") return yield* sourceHandler
+      return yield* staticHandler
+    })
+    const server = HttpServer.serve(application).pipe(
       Layer.provide(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port }))
     )
 

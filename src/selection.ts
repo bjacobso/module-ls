@@ -1,5 +1,4 @@
-import { FileSystem, Path } from "@effect/platform"
-import { Effect, Schema } from "effect"
+import { Effect, FileSystem, Path, Schema } from "effect"
 
 import { inspect } from "./app.js"
 import { InspectError, RenderError } from "./errors.js"
@@ -146,7 +145,7 @@ export const renderSelectedSource = (selected: SelectedSource): string => {
 export const renderSelectedJson = (
   selected: SelectedSource
 ): Effect.Effect<string, RenderError> =>
-  Schema.encode(SelectedSourceSchema)(selected).pipe(
+  Schema.encodeEffect(SelectedSourceSchema)(selected).pipe(
     Effect.map((encoded) => JSON.stringify(encoded, null, 2)),
     Effect.mapError((cause) => new RenderError({ message: "Selection did not match schema version 2", cause }))
   )

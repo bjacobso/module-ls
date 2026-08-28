@@ -163,19 +163,18 @@ cross-file type analysis.
 
 ## Architecture
 
-The Node side uses stable Effect 3, `@effect/cli`, `@effect/platform`, ts-morph,
-and `NodeRuntime.runMain`. Filesystem, process, terminal, HTTP, and command
-execution remain behind Effect platform services.
+The entire project uses the same Effect 4 RC. The Node side uses Effect Schema,
+the CLI in `effect/unstable/cli`, core filesystem/path/stdio/terminal services,
+the process and HTTP modules, ts-morph, `NodeServices.layer`, and
+`NodeRuntime.runMain`.
 
-The web workspace is a native FoldKit application on Effect 4 RC—not a React
-compatibility layer. Its state is one Effect Schema `Model`; events are an
+The web workspace is a native FoldKit application—not a React compatibility
+layer. Its state is one Effect Schema `Model`; events are an
 exhaustive Message union; network and navigation work are named Commands; the
 view is FoldKit virtual DOM; routing uses FoldKit parsers; accessible controls
 come from `@foldkit/ui`; Vite handles bundling and HMR; and StyleX compiles the
-visual system to static CSS.
-
-The two Effect versions are deliberately isolated by the pnpm workspace and
-communicate only through schema-validated HTTP JSON.
+visual system to static CSS. The CLI and web workspace are pinned to the same
+Effect release, while schema-validated HTTP JSON remains their runtime boundary.
 
 See [SPEC.md](SPEC.md) for the exact contract and prototype boundaries.
 

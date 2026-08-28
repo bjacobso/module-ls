@@ -1,5 +1,4 @@
-import { FileSystem, Path } from "@effect/platform"
-import { Effect, Option } from "effect"
+import { Effect, FileSystem, Option, Path } from "effect"
 import createIgnore, { type Ignore } from "ignore"
 
 import { InspectError } from "./errors.js"
@@ -82,7 +81,10 @@ const loadRootIgnore = (
   return fs.readFileString(ignorePath).pipe(
     Effect.tap((content) => Effect.sync(() => matcher.add(content))),
     Effect.as(matcher),
-    Effect.catchAll(() => Effect.succeed(matcher))
+    Effect.match({
+      onFailure: () => matcher,
+      onSuccess: () => matcher
+    })
   )
 }
 

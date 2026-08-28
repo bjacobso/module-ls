@@ -135,7 +135,7 @@ export const renderTree = (
   }).join("\n")
 
 export const renderJson = (output: ModuleLsOutput): Effect.Effect<string, RenderError> =>
-  Schema.encode(ModuleLsOutputSchema)(output).pipe(
+  Schema.encodeEffect(ModuleLsOutputSchema)(output).pipe(
     Effect.map((encoded) => JSON.stringify(encoded, null, 2)),
     Effect.mapError((cause) => new RenderError({ message: "Output did not match schema version 2", cause }))
   )
