@@ -33,7 +33,7 @@ describe("module-ls CLI", () => {
   it("emits schema-versioned JSON for agents", () => {
     const parsed: unknown = JSON.parse(cli(fixture, "--format", "json"))
     const output = Schema.decodeUnknownSync(ModuleLsOutputSchema)(parsed)
-    expect(output.schemaVersion).toBe(1)
+    expect(output.schemaVersion).toBe(2)
     expect(output.roots[0]?.type).toBe("directory")
   })
 
@@ -41,5 +41,15 @@ describe("module-ls CLI", () => {
     expect(cli(fixture, "--hidden", "--color", "never")).toContain(".hidden.ts")
     expect(cli(fixture, "--symbols", "modules", "--color", "never")).not.toContain("interface Cache")
     expect(cli(fixture, "--depth", "0", "--ascii", "--color", "never").trim()).toBe("sample/")
+  })
+
+  it("shows and extracts exact symbol ranges", () => {
+    const cache = path.join(fixture, "src/cache.ts")
+    const shown = cli("show", `${cache}#Metrics.hit`)
+    expect(shown).toContain("Metrics.hit · function")
+    expect(shown).toContain("│ export function hit")
+
+    const extracted: unknown = JSON.parse(cli("extract", cache, "--symbol", "Cache"))
+    expect(extracted).toMatchObject({ schemaVersion: 2, qualifiedName: "Cache", kind: "interface" })
   })
 })

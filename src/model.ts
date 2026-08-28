@@ -24,6 +24,21 @@ export const SourceLocationSchema = Schema.Struct({
 
 export interface SourceLocation extends Schema.Schema.Type<typeof SourceLocationSchema> {}
 
+export const SourcePositionSchema = Schema.Struct({
+  line: Schema.Number,
+  column: Schema.Number,
+  offset: Schema.Number
+})
+
+export interface SourcePosition extends Schema.Schema.Type<typeof SourcePositionSchema> {}
+
+export const SourceRangeSchema = Schema.Struct({
+  start: SourcePositionSchema,
+  end: SourcePositionSchema
+})
+
+export interface SourceRange extends Schema.Schema.Type<typeof SourceRangeSchema> {}
+
 export interface Declaration {
   readonly kind: DeclarationKind
   readonly name: string
@@ -31,6 +46,9 @@ export interface Declaration {
   readonly signature: string | null
   readonly documentation: string | null
   readonly location: SourceLocation
+  readonly range: SourceRange
+  readonly nameRange: SourceRange | null
+  readonly documentationRange: SourceRange | null
   readonly children: ReadonlyArray<Declaration>
 }
 
@@ -41,6 +59,9 @@ export const DeclarationSchema: Schema.Schema<Declaration> = Schema.Struct({
   signature: Schema.NullOr(Schema.String),
   documentation: Schema.NullOr(Schema.String),
   location: SourceLocationSchema,
+  range: SourceRangeSchema,
+  nameRange: Schema.NullOr(SourceRangeSchema),
+  documentationRange: Schema.NullOr(SourceRangeSchema),
   children: Schema.Array(Schema.suspend(() => DeclarationSchema))
 })
 
@@ -59,6 +80,7 @@ export interface FileNode {
   readonly name: string
   readonly path: string
   readonly language: "typescript" | "javascript" | null
+  readonly contentHash: string | null
   readonly documentation: string | null
   readonly declarations: ReadonlyArray<Declaration>
   readonly diagnostics: ReadonlyArray<Diagnostic>
@@ -69,6 +91,7 @@ export const FileNodeSchema: Schema.Schema<FileNode> = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
   language: Schema.NullOr(Schema.Literal("typescript", "javascript")),
+  contentHash: Schema.NullOr(Schema.String),
   documentation: Schema.NullOr(Schema.String),
   declarations: Schema.Array(DeclarationSchema),
   diagnostics: Schema.Array(DiagnosticSchema)
@@ -111,12 +134,56 @@ export const TreeNodeSchema: Schema.Schema<TreeNode> = Schema.Union(
 )
 
 export const ModuleLsOutputSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literal(2),
   roots: Schema.Array(TreeNodeSchema),
   diagnostics: Schema.Array(DiagnosticSchema)
 })
 
 export interface ModuleLsOutput extends Schema.Schema.Type<typeof ModuleLsOutputSchema> {}
+
+export const SelectedSourceSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(2),
+  path: Schema.String,
+  language: Schema.NullOr(Schema.Literal("typescript", "javascript")),
+  qualifiedName: Schema.NullOr(Schema.String),
+  kind: Schema.NullOr(DeclarationKindSchema),
+  range: SourceRangeSchema,
+  contentHash: Schema.String,
+  source: Schema.String
+})
+
+export interface SelectedSource extends Schema.Schema.Type<typeof SelectedSourceSchema> {}
+
+export const ExplorerDeclarationSchema = Schema.Struct({
+  qualifiedName: Schema.String,
+  kind: DeclarationKindSchema,
+  signature: Schema.NullOr(Schema.String),
+  documentation: Schema.NullOr(Schema.String),
+  range: SourceRangeSchema
+})
+
+export interface ExplorerDeclaration extends Schema.Schema.Type<typeof ExplorerDeclarationSchema> {}
+
+export const ExplorerFileSchema = Schema.Struct({
+  path: Schema.String,
+  name: Schema.String,
+  language: Schema.Literal("typescript", "javascript"),
+  contentHash: Schema.String,
+  documentation: Schema.NullOr(Schema.String),
+  gitStatus: Schema.NullOr(Schema.String),
+  declarations: Schema.Array(ExplorerDeclarationSchema)
+})
+
+export interface ExplorerFile extends Schema.Schema.Type<typeof ExplorerFileSchema> {}
+
+export const ExplorerSnapshotSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  root: Schema.String,
+  files: Schema.Array(ExplorerFileSchema),
+  diagnostics: Schema.Array(DiagnosticSchema)
+})
+
+export interface ExplorerSnapshot extends Schema.Schema.Type<typeof ExplorerSnapshotSchema> {}
 
 export const SymbolsSchema = Schema.Literal("modules", "public", "all")
 export type Symbols = typeof SymbolsSchema.Type
@@ -137,7 +204,9 @@ export const InspectOptionsSchema = Schema.Struct({
   hidden: Schema.Boolean,
   noIgnore: Schema.Boolean,
   ascii: Schema.Boolean,
-  color: ColorModeSchema
+  color: ColorModeSchema,
+  maxSymbols: Schema.NullOr(Schema.NonNegativeInt),
+  collapseBarrels: Schema.Boolean
 })
 
 export interface InspectOptions extends Schema.Schema.Type<typeof InspectOptionsSchema> {}

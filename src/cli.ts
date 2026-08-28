@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 import { Args, Command, Options } from "@effect/cli"
+import { Terminal } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Effect, Option } from "effect"
 
 import { run } from "./app.js"
+import { renderSelectedJson, renderSelectedSource, selectSource } from "./selection.js"
+import { serveExplorer } from "./server.js"
 
 const paths = Args.text({ name: "path" }).pipe(
   Args.repeated,
@@ -52,9 +55,18 @@ const color = Options.choice("color", ["auto", "always", "never"] as const).pipe
   Options.withDescription("Control ANSI color output")
 )
 
-export const command = Command.make(
+const maxSymbols = Options.integer("max-symbols").pipe(
+  Options.optional,
+  Options.withDescription("Maximum declarations shown per file (defaults to 8)")
+)
+
+const expand = Options.boolean("expand").pipe(
+  Options.withDescription("Show every declaration and expand barrel re-exports")
+)
+
+const inspectCommand = Command.make(
   "module-ls",
-  { paths, peek, peekLines, depth, symbols, format, hidden, noIgnore, ascii, color },
+  { paths, peek, peekLines, depth, symbols, format, hidden, noIgnore, ascii, color, maxSymbols, expand },
   (config) => run({
     roots: config.paths,
     peek: config.peek || Option.isSome(config.peekLines),
@@ -65,8 +77,53 @@ export const command = Command.make(
     hidden: config.hidden,
     noIgnore: config.noIgnore,
     ascii: config.ascii,
-    color: config.color
+    color: config.color,
+    maxSymbols: config.expand ? null : Option.getOrElse(config.maxSymbols, () => 8),
+    collapseBarrels: !config.expand
   })
+)
+
+const target = Args.text({ name: "target" }).pipe(
+  Args.withDescription("Source file, optionally followed by #Qualified.Symbol or :Qualified.Symbol")
+)
+
+const selectedSymbol = Options.text("symbol").pipe(
+  Options.optional,
+  Options.withDescription("Qualified symbol name (overrides a symbol embedded in the target)")
+)
+
+const showCommand = Command.make("show", { target, selectedSymbol }, ({ target, selectedSymbol }) =>
+  Effect.gen(function*() {
+    const terminal = yield* Terminal.Terminal
+    const selected = yield* selectSource(target, Option.getOrNull(selectedSymbol))
+    yield* terminal.display(`${renderSelectedSource(selected)}\n`)
+  })).pipe(Command.withDescription("Show an exact source block with line numbers"))
+
+const extractCommand = Command.make("extract", { target, selectedSymbol }, ({ target, selectedSymbol }) =>
+  Effect.gen(function*() {
+    const terminal = yield* Terminal.Terminal
+    const selected = yield* selectSource(target, Option.getOrNull(selectedSymbol))
+    const json = yield* renderSelectedJson(selected)
+    yield* terminal.display(`${json}\n`)
+  })).pipe(Command.withDescription("Emit an exact source block as schema-versioned JSON"))
+
+const serveRoot = Args.text({ name: "path" }).pipe(
+  Args.withDefault("."),
+  Args.withDescription("Repository directory to explore")
+)
+
+const servePort = Options.integer("port").pipe(
+  Options.withDefault(4310),
+  Options.withDescription("Loopback port for the local explorer")
+)
+
+const serveCommand = Command.make("serve", { serveRoot, servePort }, ({ serveRoot, servePort }) =>
+  serveExplorer(serveRoot, servePort)).pipe(
+    Command.withDescription("Start the local FoldKit code explorer")
+  )
+
+export const command = inspectCommand.pipe(
+  Command.withSubcommands([showCommand, extractCommand, serveCommand])
 )
 
 const cli = Command.run(command, {

@@ -7,6 +7,7 @@ import {
   SyntaxKind,
   type ExportDeclaration,
   type FunctionDeclaration,
+  type ParameterDeclaration,
   type ModuleDeclaration,
   type Node as MorphNode,
   type SourceFile,
@@ -23,6 +24,8 @@ import type {
   FileNode,
   InspectOptions,
   ModuleLsOutput,
+  SourcePosition,
+  SourceRange,
   SourceLocation,
   SymlinkNode,
   Visibility
@@ -66,8 +69,46 @@ const declarationDocumentation = (node: MorphNode): string | null => {
   return jsDoc === undefined ? null : normalizeDocumentation(jsDoc.getText())
 }
 
+const sourcePositionOf = (sourceFile: SourceFile, offset: number): SourcePosition => ({
+  ...sourceFile.getLineAndColumnAtPos(offset),
+  offset
+})
+
+const rangeOf = (sourceFile: SourceFile, node: MorphNode): SourceRange => ({
+  start: sourcePositionOf(sourceFile, node.getStart()),
+  end: sourcePositionOf(sourceFile, node.getEnd())
+})
+
+const documentationRangeOf = (sourceFile: SourceFile, node: MorphNode): SourceRange | null => {
+  if (!Node.isJSDocable(node)) return null
+  const jsDoc = node.getJsDocs().at(-1)
+  return jsDoc === undefined ? null : rangeOf(sourceFile, jsDoc)
+}
+
 const locationOf = (sourceFile: SourceFile, node: MorphNode): SourceLocation =>
   sourceFile.getLineAndColumnAtPos(node.getStart())
+
+const sourceMetadata = (
+  sourceFile: SourceFile,
+  node: MorphNode,
+  nameNode: MorphNode | undefined = undefined,
+  documentationNode: MorphNode = node
+) => ({
+  location: locationOf(sourceFile, node),
+  range: rangeOf(sourceFile, node),
+  nameRange: nameNode === undefined ? null : rangeOf(sourceFile, nameNode),
+  documentationRange: documentationRangeOf(sourceFile, documentationNode)
+})
+
+/** A small, deterministic content identity for stale-range detection (not security). */
+export const contentFingerprint = (source: string): string => {
+  let hash = 0xcbf29ce484222325n
+  for (const byte of new TextEncoder().encode(source)) {
+    hash ^= BigInt(byte)
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n)
+  }
+  return `fnv1a64:${hash.toString(16).padStart(16, "0")}`
+}
 
 const visibilityOf = (node: MorphNode, declarationFile: boolean): Visibility => {
   if (Node.isExportable(node)) {
@@ -76,15 +117,21 @@ const visibilityOf = (node: MorphNode, declarationFile: boolean): Visibility => 
   return declarationFile ? "public" : "unknown"
 }
 
-const functionSignature = (declaration: FunctionDeclaration): string | null => {
-  const name = declaration.getName()
-  if (name === undefined) return null
-  const parameters = declaration.getParameters().map((parameter) => {
+const parameterSignature = (
+  name: string,
+  parameters: ReadonlyArray<ParameterDeclaration>
+): string => {
+  const rendered = parameters.map((parameter) => {
     const rest = parameter.isRestParameter() ? "..." : ""
     const optional = parameter.isOptional() ? "?" : ""
     return `${rest}${parameter.getName()}${optional}`
   })
-  return `${name}(${parameters.join(", ")})`
+  return `${name}(${rendered.join(", ")})`
+}
+
+const functionSignature = (declaration: FunctionDeclaration): string | null => {
+  const name = declaration.getName()
+  return name === undefined ? null : parameterSignature(name, declaration.getParameters())
 }
 
 const moduleChildren = (
@@ -107,7 +154,7 @@ const moduleDeclaration = (
   visibility: visibilityOf(declaration, sourceFile.isDeclarationFile()),
   signature: null,
   documentation: declarationDocumentation(declaration),
-  location: locationOf(sourceFile, declaration),
+  ...sourceMetadata(sourceFile, declaration, declaration.getNameNode()),
   children: moduleChildren(declaration, sourceFile)
 })
 
@@ -115,15 +162,22 @@ const variableDeclarations = (
   statement: VariableStatement,
   sourceFile: SourceFile
 ): ReadonlyArray<Declaration> =>
-  statement.getDeclarations().map((declaration) => ({
-    kind: "variable" as const,
-    name: declaration.getName(),
-    visibility: visibilityOf(statement, sourceFile.isDeclarationFile()),
-    signature: declaration.getTypeNode()?.getText() ?? null,
-    documentation: declarationDocumentation(statement),
-    location: locationOf(sourceFile, declaration),
-    children: []
-  }))
+  statement.getDeclarations().map((declaration) => {
+    const initializer = declaration.getInitializer()
+    const callable = initializer !== undefined &&
+      (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+    return {
+      kind: callable ? "function" as const : "variable" as const,
+      name: declaration.getName(),
+      visibility: visibilityOf(statement, sourceFile.isDeclarationFile()),
+      signature: callable
+        ? parameterSignature(declaration.getName(), initializer.getParameters())
+        : declaration.getTypeNode()?.getText() ?? null,
+      documentation: declarationDocumentation(statement),
+      ...sourceMetadata(sourceFile, statement, declaration.getNameNode(), statement),
+      children: []
+    }
+  })
 
 const exportDeclarations = (
   statement: ExportDeclaration,
@@ -139,7 +193,7 @@ const exportDeclarations = (
       visibility: "public",
       signature,
       documentation: declarationDocumentation(statement),
-      location: locationOf(sourceFile, statement),
+      ...sourceMetadata(sourceFile, statement, undefined, statement),
       children: []
     }]
   }
@@ -150,7 +204,12 @@ const exportDeclarations = (
     visibility: "public" as const,
     signature,
     documentation: declarationDocumentation(statement),
-    location: locationOf(sourceFile, specifier),
+    ...sourceMetadata(
+      sourceFile,
+      statement,
+      specifier.getAliasNode() ?? specifier.getNameNode(),
+      statement
+    ),
     children: []
   }))
 }
@@ -171,7 +230,7 @@ const commonJsDeclarations = (
     visibility: "public" as const,
     signature: null,
     documentation: declarationDocumentation(statement),
-    location: locationOf(sourceFile, statement),
+    ...sourceMetadata(sourceFile, statement, undefined, statement),
     children: []
   }
 
@@ -200,7 +259,7 @@ const statementToDeclarations = (
   const base = {
     visibility,
     documentation: declarationDocumentation(statement),
-    location: locationOf(sourceFile, statement),
+    ...sourceMetadata(sourceFile, statement, undefined, statement),
     children: []
   } as const
 
@@ -217,25 +276,33 @@ const statementToDeclarations = (
       ...base,
       kind: "function",
       name: statement.getName() ?? "default",
+      nameRange: statement.getNameNode() === undefined ? null : rangeOf(sourceFile, statement.getNameNode()!),
       signature: functionSignature(statement)
     }]
   }
   if (Node.isClassDeclaration(statement)) {
-    return [{ ...base, kind: "class", name: statement.getName() ?? "default", signature: null }]
+    return [{
+      ...base,
+      kind: "class",
+      name: statement.getName() ?? "default",
+      nameRange: statement.getNameNode() === undefined ? null : rangeOf(sourceFile, statement.getNameNode()!),
+      signature: null
+    }]
   }
   if (Node.isInterfaceDeclaration(statement)) {
-    return [{ ...base, kind: "interface", name: statement.getName(), signature: null }]
+    return [{ ...base, kind: "interface", name: statement.getName(), nameRange: rangeOf(sourceFile, statement.getNameNode()), signature: null }]
   }
   if (Node.isTypeAliasDeclaration(statement)) {
     return [{
       ...base,
       kind: "type",
       name: statement.getName(),
+      nameRange: rangeOf(sourceFile, statement.getNameNode()),
       signature: statement.getTypeNode()?.getText() ?? null
     }]
   }
   if (Node.isEnumDeclaration(statement)) {
-    return [{ ...base, kind: "enum", name: statement.getName(), signature: null }]
+    return [{ ...base, kind: "enum", name: statement.getName(), nameRange: rangeOf(sourceFile, statement.getNameNode()), signature: null }]
   }
   return []
 }
@@ -298,6 +365,7 @@ const analyzeFile = (
       name: file.name,
       path: file.displayPath,
       language: file.language,
+      contentHash: null,
       documentation: null,
       declarations: [],
       diagnostics: file.diagnostics
@@ -316,6 +384,7 @@ const analyzeFile = (
       name: file.name,
       path: file.displayPath,
       language: file.language,
+      contentHash: contentFingerprint(file.content),
       documentation: options.peek ? extractLeadingDocumentation(file.content) : null,
       declarations,
       diagnostics: file.diagnostics
@@ -326,6 +395,7 @@ const analyzeFile = (
       name: file.name,
       path: file.displayPath,
       language: file.language,
+      contentHash: contentFingerprint(file.content),
       documentation: options.peek ? extractLeadingDocumentation(file.content) : null,
       declarations: [],
       diagnostics: [...file.diagnostics, parserDiagnostic(file, cause)]
@@ -383,7 +453,7 @@ export const analyze = (
     })
     const roots = discovery.roots.map((node) => analyzeNode(project, node, options))
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       roots,
       diagnostics: [
         ...discovery.diagnostics,

@@ -41,7 +41,9 @@ const options = (symbols: InspectOptions["symbols"]): InspectOptions => ({
   hidden: false,
   noIgnore: false,
   ascii: false,
-  color: "never"
+  color: "never",
+  maxSymbols: 8,
+  collapseBarrels: true
 })
 
 describe("extractLeadingDocumentation", () => {
@@ -61,12 +63,17 @@ describe("analyze", () => {
     if (file?.type !== "file") throw new Error("expected file")
 
     expect(file.documentation).toBe("Public cache helpers.\nSecond line.")
+    expect(file.contentHash).toMatch(/^fnv1a64:[0-9a-f]{16}$/u)
     expect(file.declarations.map(({ kind, name }) => [kind, name])).toEqual([
       ["interface", "Cache"],
-      ["variable", "make"],
+      ["function", "make"],
       ["namespace", "Metrics"]
     ])
     expect(file.declarations[2]?.children.map(({ name }) => name)).toEqual(["hit"])
+    const make = file.declarations[1]
+    expect(make?.range.start).toMatchObject({ line: 6, column: 1 })
+    expect(source.slice(make?.range.start.offset, make?.range.end.offset)).toBe("export const make = () => ({})")
+    expect(source.slice(make?.nameRange?.start.offset, make?.nameRange?.end.offset)).toBe("make")
   })
 
   it("supports module-only and all-symbol views", () => {

@@ -2,200 +2,182 @@
 
 `module-ls` is `ls` for understanding JavaScript and TypeScript codebases.
 
-It renders the filesystem and the public API in one compact tree. An optional
-peek mode includes each file's opening documentation block, so a directory can
-act as roaming documentation for humans and coding agents.
+It combines the filesystem, exported modules, opening documentation, exact
+source ranges, and Git working-tree state into a compact CLI and a local code
+explorer. It is designed as roaming documentation for humans and coding agents.
 
 ```text
-$ module-ls test/fixtures/sample --peek --color never
-sample/
-├── nested/
-│   └── index.ts
-│       └── namespace Nested
-│           └── visible
-└── src/
-    ├── cache.ts
-    │   ├── │ A tiny cache module.
-    │   ├── │ It demonstrates Effect-style exported combinators.
-    │   ├── interface Cache
-    │   ├── make
-    │   ├── get
-    │   └── namespace Metrics
-    │       └── hit(name)
-    └── math.js
-        ├── │ CommonJS arithmetic helpers.
-        ├── add
-        └── subtract
+$ mls src --peek --color never
+src/
+├── analyzer.ts
+│   ├── │ TypeScript source analysis.
+│   ├── extractLeadingDocumentation(source) [L53–64]
+│   ├── contentFingerprint(source) [L104–111]
+│   └── analyze(discovery, options) [L437–473]
+├── model.ts
+│   ├── DeclarationKindSchema [L3–13]
+│   ├── SourceRangeSchema [L35–38]
+│   └── … 38 more
+└── index.ts
+    └── 56 re-exports
 ```
 
-This repository contains a working v0.1 prototype. It is not published to npm.
-
-## Why
-
-File trees answer “where is it?” API extractors answer “what is exported?”
-`module-ls` answers both without requiring the project to build.
-
-It is particularly useful for functional modules where a file exports types,
-constructors, guards, and small combinators rather than one primary class. It
-does not special-case Effect; Effect-style TypeScript naturally produces useful
-output.
+The project is a functional prototype and is not published to npm.
 
 ## Try it
 
-Node.js 20 or newer and pnpm are required for development.
+Node.js 20 or newer and pnpm are required.
 
 ```sh
 pnpm install
-pnpm dev .
-pnpm dev src --peek
 pnpm check
+pnpm dev src --peek
 ```
 
-Build the installable commands:
+Build and link the two equivalent commands:
 
 ```sh
 pnpm build
-node dist/cli.js src
 pnpm link --global
 module-ls src
 mls src
 ```
 
-`module-ls` and `mls` are equivalent bins.
+## CLI
 
-## Usage
+Inspect one or more roots:
 
-```text
-module-ls [options] [path ...]
+```sh
+mls .
+mls src --peek
+mls src --symbols all
+mls src --max-symbols 4
+mls src --expand
+mls src --format json
 ```
 
-With no path, the current directory is inspected. Files and multiple roots are
-accepted.
-
-```text
-module-ls .
-module-ls lib src
-module-ls src --peek
-module-ls src --peek-lines 1
-module-ls src --depth 2
-module-ls src --symbols modules
-module-ls src --symbols all
-module-ls src --format json
-module-ls src --ascii --color never
-```
-
-Important options:
+Tree output defaults to eight declarations per file and collapses files made
+entirely of re-exports. `--expand` disables both reductions. Every declaration
+includes a source line range.
 
 | Option | Purpose | Default |
 | --- | --- | --- |
 | `--peek` | Show leading file documentation. | off |
 | `--peek-lines <n>` | Limit documentation lines and imply `--peek`. | `3` |
 | `--depth <n>` | Limit traversal below each root. | unlimited |
-| `--symbols <level>` | Show `modules`, `public`, or `all` declarations. | `public` |
+| `--symbols <level>` | Show `modules`, `public`, or `all`. | `public` |
+| `--max-symbols <n>` | Limit declarations shown per file. | `8` |
+| `--expand` | Show all declarations and barrel exports. | off |
 | `--format <format>` | Produce `tree` or `json`. | `tree` |
 | `--hidden` | Include hidden entries. | off |
-| `--no-ignore` | Disable root `.gitignore` and built-in ignores. | off |
+| `--no-ignore` | Disable `.gitignore` and built-in ignores. | off |
 | `--ascii` | Use ASCII tree connectors. | off |
-| `--color <when>` | Use color `auto`, `always`, or `never`. | `auto` |
+| `--color <when>` | Use `auto`, `always`, or `never`. | `auto` |
 
-Effect CLI also provides `--help`, `--version`, shell completions, log-level
-control, and wizard mode. `NO_COLOR` is honored in automatic color mode.
+### Jump to source
 
-## What it understands
+`show` prints the exact syntax block with real source line numbers:
 
-Supported extensions:
-
-```text
-.ts .tsx .mts .cts .js .jsx .mjs .cjs
+```sh
+mls show src/analyzer.ts#analyze
+mls show src/analyzer.ts --symbol analyze
 ```
 
-The ts-morph adapter recognizes:
-
-- exported functions, variables, classes, interfaces, types, and enums;
-- TypeScript namespaces and ambient modules, including direct children;
-- default exports and named or star re-exports;
-- public declarations in `.d.ts` files;
-- private top-level declarations with `--symbols all`; and
-- common CommonJS assignments such as `exports.name = value`,
-  `module.exports.name = value`, and `module.exports = { name }`.
-
-The analyzer is intentionally shallow. It does not list class members,
-function-local bindings, inferred types, imports, dependencies, or call graphs.
-
-## Peek mode
-
-Peek mode reads the first JSDoc, block comment, or contiguous line-comment block
-after an optional BOM, shebang, or triple-slash reference directive.
-
-Comment markers are removed, indentation is normalized, blank lines are omitted
-from tree output, and truncation is explicit:
-
 ```text
-cache.ts
-├── │ A tiny cache module. …
-├── interface Cache
-└── make
+src/analyzer.ts:L437–473 · analyze · function · fnv1a64:…
+437 │ export const analyze = (
+438 │   discovery: DiscoveryResult,
+    ⋮
 ```
 
-Source is parsed only. Project code is never evaluated.
+`extract` emits the same selection as schema-versioned JSON, including its
+0-based offsets and content fingerprint:
+
+```sh
+mls extract src/analyzer.ts#analyze
+```
+
+Targets accept `file.ts#Qualified.Symbol`, `file.ts:Qualified.Symbol`, or a
+separate `--symbol`. Omitting the symbol selects the complete file.
+
+### Open the explorer
+
+```sh
+pnpm build
+mls serve .
+# open http://127.0.0.1:4310
+```
+
+Use `--port <n>` to choose another loopback port. The explorer offers:
+
+- a searchable file and qualified-symbol map;
+- file and declaration documentation;
+- precise line-numbered source blocks;
+- Git status badges and a changed-file count;
+- typed, bidirectional file routes;
+- refresh without restarting the service; and
+- FoldKit DevTools during Vite development.
+
+For UI development, run the API and Vite separately:
+
+```sh
+pnpm dev serve .
+pnpm dev:web
+# open http://127.0.0.1:5173
+```
 
 ## Agent output
 
-`--format json` emits a single schema-versioned object without ANSI escapes:
+`--format json` returns the complete recursive index as schema version 2.
+Declarations contain three end-exclusive ranges:
 
-```json
-{
-  "schemaVersion": 1,
-  "roots": [],
-  "diagnostics": []
-}
+- `range`: the declaration syntax block;
+- `nameRange`: the identifier, when one exists; and
+- `documentationRange`: the attached JSDoc block, when one exists.
+
+Positions use 1-based lines and columns plus 0-based UTF-16 offsets. Files carry
+an `fnv1a64:` content fingerprint so a consumer can reject stale offsets. The
+fingerprint is an identity check, not a security hash.
+
+The explorer also serves read-only JSON endpoints:
+
+```text
+GET /api/tree
+GET /api/source?path=src/analyzer.ts
+GET /api/source?path=src/analyzer.ts&symbol=analyze
 ```
 
-The complete recursive contract is exported as `ModuleLsOutputSchema` from the
-package. Other schemas, `inspect`, discovery, analysis, and render functions are
-also exported for programmatic use.
+`ModuleLsOutputSchema`, `SelectedSourceSchema`, `ExplorerSnapshotSchema`, and
+the inspection/selection functions are exported for programmatic use.
+
+## What it understands
+
+Supported extensions are `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`,
+and `.cjs`. ts-morph recognizes exported functions, variables, classes,
+interfaces, types, enums, namespaces, ambient modules, default exports,
+re-exports, declaration files, and common CommonJS assignments.
+
+The analyzer is intentionally shallow. It does not evaluate project code,
+require a valid build, list class members, infer call graphs, or perform
+cross-file type analysis.
 
 ## Architecture
 
-The implementation uses Effect through every side-effecting boundary:
+The Node side uses stable Effect 3, `@effect/cli`, `@effect/platform`, ts-morph,
+and `NodeRuntime.runMain`. Filesystem, process, terminal, HTTP, and command
+execution remain behind Effect platform services.
 
-```text
-@effect/cli
-    ↓
-Effect Schema options
-    ↓
-@effect/platform discovery ──→ in-memory ts-morph Project
-    ↓                              ↓
-shared Schema model ←──────── declarations and docs
-    ↓
-tree or JSON renderer
-    ↓
-Platform Terminal ──→ NodeRuntime.runMain
-```
+The web workspace is a native FoldKit application on Effect 4 RC—not a React
+compatibility layer. Its state is one Effect Schema `Model`; events are an
+exhaustive Message union; network and navigation work are named Commands; the
+view is FoldKit virtual DOM; routing uses FoldKit parsers; accessible controls
+come from `@foldkit/ui`; Vite handles bundling and HMR; and StyleX compiles the
+visual system to static CSS.
 
-Filesystem access comes from `FileSystem` and `Path`; terminal capabilities come
-from `Terminal`; failures use tagged Effect errors; and JSON is encoded through
-the same Effect Schema exposed to consumers. ts-morph receives source strings in
-an in-memory project and does not perform its own filesystem traversal.
+The two Effect versions are deliberately isolated by the pnpm workspace and
+communicate only through schema-validated HTTP JSON.
 
-The pipeline remains composable:
-
-```text
-paths -> discover -> analyze -> filter -> render
-```
-
-## Prototype boundaries
-
-- Only JavaScript and TypeScript are indexed.
-- The explicit root `.gitignore` is applied; nested `.gitignore` files are not
-  yet layered.
-- Files larger than 1 MiB are listed with a diagnostic but not parsed.
-- Symlinks are shown as leaves and never followed.
-- tsconfig-based module resolution and cross-file type analysis are not used.
-- The package is currently unlicensed and unpublished.
-
-The implemented contract and remaining decisions are detailed in
-[SPEC.md](SPEC.md).
+See [SPEC.md](SPEC.md) for the exact contract and prototype boundaries.
 
 ## License
 

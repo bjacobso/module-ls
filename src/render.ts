@@ -27,24 +27,28 @@ const paint = (enabled: boolean, color: keyof typeof ansi, value: string): strin
   enabled ? `${ansi[color]}${value}${ansi.reset}` : value
 
 const declarationLabel = (declaration: Declaration, color: boolean): string => {
+  const lines = declaration.range.start.line === declaration.range.end.line
+    ? `L${declaration.range.start.line}`
+    : `L${declaration.range.start.line}–${declaration.range.end.line}`
+  const suffix = paint(color, "dim", ` [${lines}]`)
   switch (declaration.kind) {
     case "namespace":
-      return `${paint(color, "magenta", "namespace")} ${declaration.name}`
+      return `${paint(color, "magenta", "namespace")} ${declaration.name}${suffix}`
     case "class":
     case "enum":
     case "interface":
     case "type":
-      return `${paint(color, "yellow", declaration.kind)} ${declaration.name}`
+      return `${paint(color, "yellow", declaration.kind)} ${declaration.name}${suffix}`
     case "function":
-      return declaration.signature ?? declaration.name
+      return `${declaration.signature ?? declaration.name}${suffix}`
     case "variable":
-      return declaration.signature === null
+      return `${declaration.signature === null
         ? declaration.name
-        : `${declaration.name}: ${declaration.signature}`
+        : `${declaration.name}: ${declaration.signature}`}${suffix}`
     case "re-export":
-      return `export ${declaration.name}${declaration.signature === null ? "" : ` ${declaration.signature}`}`
+      return `export ${declaration.name}${declaration.signature === null ? "" : ` ${declaration.signature}`}${suffix}`
     case "default":
-      return "default export"
+      return `default export${suffix}`
   }
 }
 
@@ -81,11 +85,21 @@ const treeItem = (node: TreeNode, options: InspectOptions, color: boolean): Rend
     case "symlink":
       return { label: paint(color, "cyan", `${node.name}@`), children: [] }
     case "file":
+      const barrel = options.collapseBarrels && node.declarations.length > 0 &&
+        node.declarations.every((declaration) => declaration.kind === "re-export")
+      const maximum = options.maxSymbols ?? node.declarations.length
+      const declarations = barrel
+        ? [{ label: paint(color, "dim", `${node.declarations.length} re-exports`), children: [] }]
+        : node.declarations.slice(0, maximum).map((declaration) => declarationItem(declaration, color))
+      const remaining = barrel ? 0 : node.declarations.length - declarations.length
       return {
         label: paint(color, "cyan", node.name),
         children: [
           ...documentationItems(node.documentation, options.peekLines, color),
-          ...node.declarations.map((declaration) => declarationItem(declaration, color))
+          ...declarations,
+          ...(remaining > 0
+            ? [{ label: paint(color, "dim", `… ${remaining} more`), children: [] }]
+            : [])
         ]
       }
   }
@@ -123,5 +137,5 @@ export const renderTree = (
 export const renderJson = (output: ModuleLsOutput): Effect.Effect<string, RenderError> =>
   Schema.encode(ModuleLsOutputSchema)(output).pipe(
     Effect.map((encoded) => JSON.stringify(encoded, null, 2)),
-    Effect.mapError((cause) => new RenderError({ message: "Output did not match schema version 1", cause }))
+    Effect.mapError((cause) => new RenderError({ message: "Output did not match schema version 2", cause }))
   )

@@ -1,0 +1,98 @@
+import * as stylex from "@stylexjs/stylex"
+
+const ink = "#24211d"
+const paper = "#f4f0e8"
+const violet = "#6e4bec"
+const line = "#d9d2c6"
+
+export const styles = stylex.create({
+  app: {
+    backgroundColor: paper,
+    color: ink,
+    display: "grid",
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    gridTemplateRows: "auto minmax(0, 1fr)",
+    height: "100dvh",
+    overflow: "hidden"
+  },
+  topbar: {
+    alignItems: "center",
+    backgroundColor: "#fbf8f2",
+    borderBottomColor: line,
+    borderBottomStyle: "solid",
+    borderBottomWidth: 1,
+    display: "flex",
+    gap: 20,
+    justifyContent: "space-between",
+    minHeight: 72,
+    paddingBlock: 12,
+    paddingInline: 20
+  },
+  brandWrap: { alignItems: "center", display: "flex", gap: 12, minWidth: 0 },
+  mark: {
+    alignItems: "center",
+    backgroundColor: ink,
+    borderRadius: 9,
+    color: "#fffdf8",
+    display: "flex",
+    fontFamily: '"SFMono-Regular", Consolas, monospace',
+    fontSize: 13,
+    fontWeight: 700,
+    height: 36,
+    justifyContent: "center",
+    letterSpacing: -1,
+    width: 42
+  },
+  brand: { fontSize: 15, fontWeight: 750, letterSpacing: -0.2, margin: 0 },
+  rootPath: { color: "#746e65", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  actions: { alignItems: "center", display: "flex", gap: 10 },
+  meta: { color: "#746e65", fontSize: 12, whiteSpace: "nowrap" },
+  refresh: {
+    backgroundColor: "transparent",
+    borderColor: line,
+    borderRadius: 8,
+    borderStyle: "solid",
+    borderWidth: 1,
+    color: ink,
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 650,
+    paddingBlock: 8,
+    paddingInline: 11
+  },
+  layout: { display: "grid", gridTemplateColumns: "minmax(260px, 360px) minmax(0, 1fr)", minHeight: 0 },
+  sidebar: { backgroundColor: "#ece7de", borderRightColor: line, borderRightStyle: "solid", borderRightWidth: 1, display: "flex", flexDirection: "column", minHeight: 0 },
+  searchWrap: { borderBottomColor: line, borderBottomStyle: "solid", borderBottomWidth: 1, padding: 14 },
+  searchLabel: { color: "#746e65", display: "block", fontSize: 10, fontWeight: 750, letterSpacing: 1.1, marginBottom: 7, textTransform: "uppercase" },
+  search: { backgroundColor: "#fbf8f2", borderColor: "#cbc3b6", borderRadius: 8, borderStyle: "solid", borderWidth: 1, boxSizing: "border-box", color: ink, fontSize: 13, outlineColor: violet, paddingBlock: 10, paddingInline: 11, width: "100%" },
+  files: { flex: 1, listStyle: "none", margin: 0, overflowY: "auto", paddingBlock: 8, paddingInline: 8 },
+  fileRow: { borderRadius: 7, marginBottom: 2 },
+  fileRowSelected: { backgroundColor: "#ddd5fa" },
+  fileLink: { alignItems: "center", color: ink, display: "flex", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 12, gap: 8, paddingBlock: 8, paddingInline: 9, textDecoration: "none" },
+  fileIcon: { color: "#9a7227", fontSize: 10 },
+  fileName: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  git: { backgroundColor: "#fff1bd", borderRadius: 999, color: "#765300", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 9, fontWeight: 750, paddingBlock: 2, paddingInline: 6 },
+  declarations: { borderLeftColor: "#c6b9f7", borderLeftStyle: "solid", borderLeftWidth: 1, listStyle: "none", marginBlock: 0, marginInlineStart: 19, paddingBlockEnd: 7, paddingInlineStart: 9 },
+  symbolButton: { backgroundColor: "transparent", borderWidth: 0, color: "#625d55", cursor: "pointer", display: "grid", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 11, gap: 4, gridTemplateColumns: "52px minmax(0, 1fr) auto", paddingBlock: 5, paddingInline: 5, textAlign: "left", width: "100%" },
+  symbolActive: { color: violet, fontWeight: 700 },
+  kind: { color: "#9a7227", fontSize: 9, letterSpacing: 0.5, overflow: "hidden", textTransform: "uppercase" },
+  symbolName: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  lineRef: { color: "#999187", fontSize: 9 },
+  emptySide: { color: "#746e65", fontSize: 12, lineHeight: 1.5, padding: 18 },
+  main: { backgroundColor: "#fbf8f2", minHeight: 0, overflow: "auto" },
+  welcome: { alignItems: "center", display: "flex", flexDirection: "column", height: "100%", justifyContent: "center", padding: 40, textAlign: "center" },
+  welcomeKicker: { color: violet, fontSize: 10, fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase" },
+  welcomeTitle: { fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 38, fontWeight: 500, letterSpacing: -1.1, marginBlock: 12 },
+  welcomeCopy: { color: "#746e65", fontSize: 14, lineHeight: 1.7, margin: 0, maxWidth: 520 },
+  sourceHeader: { backgroundColor: "#fbf8f2", borderBottomColor: line, borderBottomStyle: "solid", borderBottomWidth: 1, paddingBlock: 17, paddingInline: 22, position: "sticky", top: 0, zIndex: 2 },
+  crumbs: { alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 },
+  sourcePath: { fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 13, fontWeight: 700 },
+  range: { backgroundColor: "#ebe5dc", borderRadius: 999, color: "#655f57", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 10, paddingBlock: 4, paddingInline: 8 },
+  hash: { color: "#999187", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 9, marginTop: 7 },
+  documentation: { borderBottomColor: line, borderBottomStyle: "solid", borderBottomWidth: 1, color: "#554f47", fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 15, fontStyle: "italic", lineHeight: 1.55, margin: 0, paddingBlock: 16, paddingInline: 22 },
+  code: { backgroundColor: "#24211d", color: "#eee9df", fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace', fontSize: 12, lineHeight: 1.65, margin: 0, minHeight: "calc(100% - 80px)", overflow: "auto", paddingBlock: 18 },
+  codeLine: { display: "grid", gridTemplateColumns: "64px minmax(max-content, 1fr)", minHeight: 20, paddingInlineEnd: 22 },
+  codeNumber: { color: "#777168", paddingInlineEnd: 18, textAlign: "right", userSelect: "none" },
+  codeText: { whiteSpace: "pre" },
+  error: { backgroundColor: "#fff0ed", borderColor: "#e7aaa1", borderRadius: 8, borderStyle: "solid", borderWidth: 1, color: "#8c2f24", fontSize: 13, margin: 20, padding: 14 }
+})

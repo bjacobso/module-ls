@@ -14,11 +14,18 @@ const options: InspectOptions = {
   hidden: false,
   noIgnore: false,
   ascii: false,
-  color: "never"
+  color: "never",
+  maxSymbols: 8,
+  collapseBarrels: true
 }
 
+const range = (line: number) => ({
+  start: { line, column: 1, offset: line * 10 },
+  end: { line, column: 10, offset: line * 10 + 9 }
+})
+
 const output: typeof ModuleLsOutputSchema.Type = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   roots: [{
     type: "directory",
     name: "src",
@@ -28,6 +35,7 @@ const output: typeof ModuleLsOutputSchema.Type = {
       name: "cache.ts",
       path: "src/cache.ts",
       language: "typescript",
+      contentHash: "fnv1a64:0000000000000000",
       documentation: "First line.\nSecond line.",
       diagnostics: [],
       declarations: [{
@@ -37,6 +45,9 @@ const output: typeof ModuleLsOutputSchema.Type = {
         signature: null,
         documentation: null,
         location: { line: 4, column: 1 },
+        range: range(4),
+        nameRange: range(4),
+        documentationRange: null,
         children: []
       }, {
         kind: "function",
@@ -45,6 +56,9 @@ const output: typeof ModuleLsOutputSchema.Type = {
         signature: "get(cache, key)",
         documentation: null,
         location: { line: 8, column: 1 },
+        range: range(8),
+        nameRange: range(8),
+        documentationRange: null,
         children: []
       }]
     }]
@@ -58,8 +72,8 @@ describe("renderers", () => {
       "src/
       └── cache.ts
           ├── │ First line. …
-          ├── type Cache
-          └── get(cache, key)"
+          ├── type Cache [L4]
+          └── get(cache, key) [L8]"
     `)
     expect(renderTree(output, { ...options, ascii: true }, false)).toContain("`-- cache.ts")
   })
