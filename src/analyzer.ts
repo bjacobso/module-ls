@@ -110,11 +110,21 @@ export const contentFingerprint = (source: string): string => {
   return `fnv1a64:${hash.toString(16).padStart(16, "0")}`
 }
 
-const visibilityOf = (node: MorphNode, declarationFile: boolean): Visibility => {
+const visibilityOf = (
+  node: MorphNode,
+  declarationFile: boolean,
+  exportedNames: ReadonlySet<string>,
+  name?: string
+): Visibility => {
+  if (declarationFile) return "public"
   if (Node.isExportable(node)) {
-    return node.isExported() || node.isDefaultExport() || declarationFile ? "public" : "private"
+    const exported = node.hasExportKeyword() || node.hasDefaultKeyword() ||
+      (name !== undefined && exportedNames.has(name))
+    return exported
+      ? "public"
+      : "private"
   }
-  return declarationFile ? "public" : "unknown"
+  return "unknown"
 }
 
 const parameterSignature = (
@@ -141,17 +151,25 @@ const moduleChildren = (
   const body = declaration.getBody()
   if (body === undefined) return []
   if (Node.isModuleBlock(body)) return statementsToDeclarations(body.getStatements(), sourceFile)
-  if (Node.isModuleDeclaration(body)) return [moduleDeclaration(body, sourceFile)]
+  if (Node.isModuleDeclaration(body)) {
+    return [moduleDeclaration(body, sourceFile, new Set([body.getName()]))]
+  }
   return []
 }
 
 const moduleDeclaration = (
   declaration: ModuleDeclaration,
-  sourceFile: SourceFile
+  sourceFile: SourceFile,
+  exportedNames: ReadonlySet<string>
 ): Declaration => ({
   kind: "namespace",
   name: declaration.getName(),
-  visibility: visibilityOf(declaration, sourceFile.isDeclarationFile()),
+  visibility: visibilityOf(
+    declaration,
+    sourceFile.isDeclarationFile(),
+    exportedNames,
+    declaration.getName()
+  ),
   signature: null,
   documentation: declarationDocumentation(declaration),
   ...sourceMetadata(sourceFile, declaration, declaration.getNameNode()),
@@ -160,7 +178,8 @@ const moduleDeclaration = (
 
 const variableDeclarations = (
   statement: VariableStatement,
-  sourceFile: SourceFile
+  sourceFile: SourceFile,
+  exportedNames: ReadonlySet<string>
 ): ReadonlyArray<Declaration> =>
   statement.getDeclarations().map((declaration) => {
     const initializer = declaration.getInitializer()
@@ -169,7 +188,12 @@ const variableDeclarations = (
     return {
       kind: callable ? "function" as const : "variable" as const,
       name: declaration.getName(),
-      visibility: visibilityOf(statement, sourceFile.isDeclarationFile()),
+      visibility: visibilityOf(
+        statement,
+        sourceFile.isDeclarationFile(),
+        exportedNames,
+        declaration.getName()
+      ),
       signature: callable
         ? parameterSignature(declaration.getName(), initializer.getParameters())
         : declaration.getTypeNode()?.getText() ?? null,
@@ -253,9 +277,17 @@ const commonJsDeclarations = (
 
 const statementToDeclarations = (
   statement: Statement,
-  sourceFile: SourceFile
+  sourceFile: SourceFile,
+  exportedNames: ReadonlySet<string>
 ): ReadonlyArray<Declaration> => {
-  const visibility = visibilityOf(statement, sourceFile.isDeclarationFile())
+  const name = Node.isFunctionDeclaration(statement) ||
+      Node.isClassDeclaration(statement) ||
+      Node.isInterfaceDeclaration(statement) ||
+      Node.isTypeAliasDeclaration(statement) ||
+      Node.isEnumDeclaration(statement)
+    ? statement.getName()
+    : undefined
+  const visibility = visibilityOf(statement, sourceFile.isDeclarationFile(), exportedNames, name)
   const base = {
     visibility,
     documentation: declarationDocumentation(statement),
@@ -263,8 +295,8 @@ const statementToDeclarations = (
     children: []
   } as const
 
-  if (Node.isModuleDeclaration(statement)) return [moduleDeclaration(statement, sourceFile)]
-  if (Node.isVariableStatement(statement)) return variableDeclarations(statement, sourceFile)
+  if (Node.isModuleDeclaration(statement)) return [moduleDeclaration(statement, sourceFile, exportedNames)]
+  if (Node.isVariableStatement(statement)) return variableDeclarations(statement, sourceFile, exportedNames)
   if (Node.isExportDeclaration(statement)) return exportDeclarations(statement, sourceFile)
   const commonJs = commonJsDeclarations(statement, sourceFile)
   if (commonJs.length > 0) return commonJs
@@ -311,7 +343,17 @@ const statementsToDeclarations = (
   statements: ReadonlyArray<Statement>,
   sourceFile: SourceFile
 ): ReadonlyArray<Declaration> => {
-  const declarations = statements.flatMap((statement) => statementToDeclarations(statement, sourceFile))
+  const exportedNames = new Set<string>()
+  for (const statement of statements) {
+    if (Node.isExportDeclaration(statement) && statement.getModuleSpecifier() === undefined) {
+      for (const specifier of statement.getNamedExports()) exportedNames.add(specifier.getName())
+    } else if (Node.isExportAssignment(statement) && !statement.isExportEquals()) {
+      const expression = statement.getExpression().getText()
+      if (/^[A-Za-z_$][\w$]*$/u.test(expression)) exportedNames.add(expression)
+    }
+  }
+  const declarations = statements.flatMap((statement) =>
+    statementToDeclarations(statement, sourceFile, exportedNames))
   const positions = new Map<string, number>()
   const deduplicated: Array<Declaration> = []
   for (const declaration of declarations) {
@@ -354,8 +396,28 @@ const parserDiagnostic = (file: DiscoveredFile, cause: unknown): Diagnostic => (
   line: null
 })
 
+const makeProject = (): Project => new Project({
+  useInMemoryFileSystem: true,
+  skipAddingFilesFromTsConfig: true,
+  compilerOptions: {
+    allowJs: true,
+    checkJs: false,
+    jsx: ts.JsxEmit.Preserve,
+    module: ModuleKind.ESNext,
+    target: ScriptTarget.Latest
+  }
+})
+
+// Keep parser state bounded without paying the cost of a fresh Project per file.
+const ANALYSIS_BATCH_SIZE = 128
+
+interface AnalysisContext {
+  project: Project
+  size: number
+}
+
 const analyzeFile = (
-  project: Project,
+  context: AnalysisContext,
   file: DiscoveredFile,
   options: InspectOptions
 ): FileNode => {
@@ -372,8 +434,9 @@ const analyzeFile = (
     }
   }
 
+  const source = file.content
   try {
-    const sourceFile = project.createSourceFile(file.path, file.content, { overwrite: true })
+    const sourceFile = context.project.createSourceFile(file.path, source, { overwrite: true })
     const declarations = statementsToDeclarations(sourceFile.getStatements(), sourceFile)
       .flatMap((declaration) => {
         const filtered = filterDeclaration(declaration, options.symbols)
@@ -384,8 +447,8 @@ const analyzeFile = (
       name: file.name,
       path: file.displayPath,
       language: file.language,
-      contentHash: contentFingerprint(file.content),
-      documentation: options.peek ? extractLeadingDocumentation(file.content) : null,
+      contentHash: contentFingerprint(source),
+      documentation: options.peek ? extractLeadingDocumentation(source) : null,
       declarations,
       diagnostics: file.diagnostics
     }
@@ -395,22 +458,28 @@ const analyzeFile = (
       name: file.name,
       path: file.displayPath,
       language: file.language,
-      contentHash: contentFingerprint(file.content),
-      documentation: options.peek ? extractLeadingDocumentation(file.content) : null,
+      contentHash: contentFingerprint(source),
+      documentation: options.peek ? extractLeadingDocumentation(source) : null,
       declarations: [],
       diagnostics: [...file.diagnostics, parserDiagnostic(file, cause)]
+    }
+  } finally {
+    context.size += 1
+    if (context.size >= ANALYSIS_BATCH_SIZE) {
+      context.project = makeProject()
+      context.size = 0
     }
   }
 }
 
 const analyzeNode = (
-  project: Project,
+  context: AnalysisContext,
   node: DiscoveredNode,
   options: InspectOptions
 ): DirectoryNode | FileNode | SymlinkNode => {
   switch (node._tag) {
     case "File":
-      return analyzeFile(project, node, options)
+      return analyzeFile(context, node, options)
     case "Symlink":
       return { type: "symlink", name: node.name, path: node.displayPath }
     case "Directory":
@@ -418,7 +487,7 @@ const analyzeNode = (
         type: "directory",
         name: node.name,
         path: node.displayPath,
-        children: node.children.map((child) => analyzeNode(project, child, options))
+        children: node.children.map((child) => analyzeNode(context, child, options))
       }
   }
 }
@@ -440,30 +509,20 @@ export const analyze = (
 ): Effect.Effect<ModuleLsOutput, InspectError> =>
   Effect.try({
     try: () => {
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      skipAddingFilesFromTsConfig: true,
-      compilerOptions: {
-        allowJs: true,
-        checkJs: false,
-        jsx: ts.JsxEmit.Preserve,
-        module: ModuleKind.ESNext,
-        target: ScriptTarget.Latest
+      const context: AnalysisContext = { project: makeProject(), size: 0 }
+      const roots = discovery.roots.map((node) => analyzeNode(context, node, options))
+      return {
+        schemaVersion: 2,
+        roots,
+        diagnostics: [
+          ...discovery.diagnostics,
+          ...roots.flatMap(collectDiagnostics).filter(
+            (item, index, all) => all.findIndex((candidate) =>
+              candidate.code === item.code && candidate.path === item.path && candidate.message === item.message
+            ) === index
+          )
+        ]
       }
-    })
-    const roots = discovery.roots.map((node) => analyzeNode(project, node, options))
-    return {
-      schemaVersion: 2,
-      roots,
-      diagnostics: [
-        ...discovery.diagnostics,
-        ...roots.flatMap(collectDiagnostics).filter(
-          (item, index, all) => all.findIndex((candidate) =>
-            candidate.code === item.code && candidate.path === item.path && candidate.message === item.message
-          ) === index
-        )
-      ]
-    }
     },
     catch: (cause) => new InspectError({
       path: "<analysis>",

@@ -108,4 +108,25 @@ describe("analyze", () => {
     if (file?.type !== "file") throw new Error("expected file")
     expect(file.declarations.map(({ name }) => name)).toEqual(["add", "sub"])
   })
+
+  it("keeps local export clauses public across bounded parser batches", () => {
+    const roots = Array.from({ length: 130 }, (_, index) => ({
+      _tag: "File" as const,
+      name: `module-${index}.ts`,
+      path: `/module-${index}.ts`,
+      displayPath: `module-${index}.ts`,
+      language: "typescript" as const,
+      content: `const local${index} = ${index}\nexport { local${index} as value${index} }\n`,
+      diagnostics: []
+    }))
+    const output = Effect.runSync(analyze({ roots, diagnostics: [] }, options("public")))
+
+    expect(output.roots).toHaveLength(130)
+    const afterBoundary = output.roots[129]
+    if (afterBoundary?.type !== "file") throw new Error("expected file")
+    expect(afterBoundary.declarations.map(({ kind, name }) => [kind, name])).toEqual([
+      ["variable", "local129"],
+      ["re-export", "value129"]
+    ])
+  })
 })

@@ -75,6 +75,11 @@ retained; a public occurrence supersedes a private duplicate. Project code is
 parsed but never evaluated. Cross-file resolution, inferred types, class
 members, destructured binding expansion, and dynamic CommonJS are out of scope.
 
+Export visibility is derived from syntax—export/default modifiers and local
+export clauses—without invoking the TypeScript type checker. Source files are
+parsed in bounded ts-morph project batches so large monorepos do not accumulate
+every AST in one long-lived project.
+
 ## 4. Source coordinates
 
 Every declaration has:
