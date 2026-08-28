@@ -1,311 +1,316 @@
-# module-ls v0.1 specification
+# module-ls v0.1 prototype specification
 
-Status: Draft
+Status: Implemented prototype
 
 Audience: implementers, contributors, and tool authors
 
 ## 1. Summary
 
-`module-ls` is a read-only command-line explorer that combines a filesystem tree
-with a shallow, language-aware index of source modules and public symbols. It is
-optimized for quick repository orientation rather than complete semantic
-analysis.
+`module-ls` is a read-only command-line explorer for JavaScript and TypeScript.
+It combines a filesystem tree with a shallow index of modules and declarations.
+It is optimized for repository orientation, compact documentation, and stable
+agent input rather than complete semantic analysis.
 
-The program installs two equivalent commands:
+The package installs equivalent `module-ls` and `mls` commands. The runtime is
+Effect TypeScript, source analysis uses ts-morph, and Node execution terminates
+through `NodeRuntime.runMain`.
 
-```text
-module-ls
-mls
-```
+## 2. Goals and non-goals
 
-The first release supports TypeScript/JavaScript, OCaml, and Elixir. Its
-implementation is organized as a pipeline of small stages:
+Version 0.1 does the following:
 
-```text
-paths -> discover -> classify -> parse -> filter -> render
-```
-
-Each language adapter consumes source text and returns the same small document
-model. Renderers never inspect language-specific syntax.
-
-## 2. Goals
-
-Version 0.1 must:
-
-1. Show directory structure and source-level structure in one compact tree.
-2. Work in incomplete, unbuilt, or syntactically broken repositories whenever a
-   useful partial result can be recovered.
-3. Recognize the module and public API conventions of the initial languages.
-4. Optionally show a concise opening documentation block for each source file.
-5. Produce deterministic terminal and JSON output.
-6. Be safe to run anywhere: read-only, bounded, and non-following by default.
-7. Make adding a language adapter or renderer a local change.
+1. Shows directory structure and source-level structure together.
+2. Finds useful declarations without requiring a build or valid typecheck.
+3. Understands common ESM, TypeScript namespace, declaration-file, and CommonJS
+   export patterns.
+4. Optionally shows concise opening documentation for each source file.
+5. Produces deterministic tree output and schema-versioned JSON.
+6. Uses Effect services for filesystem, path, terminal, configuration, failure,
+   and runtime concerns.
+7. Keeps discovery, analysis, filtering, and rendering independently usable.
 
 Version 0.1 is not:
 
 - a compiler, type checker, documentation generator, or language server;
-- a call graph, dependency graph, or import graph;
-- a replacement for `find`, `tree`, `ctags`, or API reference documentation;
-- a full parser required to reject invalid source; or
-- an index stored on disk or maintained by a daemon.
+- a dependency, import, type, call, or control-flow graph;
+- a complete JavaScript evaluator or macro system;
+- an index stored on disk or maintained by a daemon; or
+- a multi-language implementation.
 
-## 3. Command-line interface
+## 3. Commands and options
 
 ```text
-module-ls [path ...] [options]
+module-ls [options] [path ...]
+mls [options] [path ...]
 ```
 
-With no path, the command inspects the current directory. A file path inspects
-that single file. Multiple roots are rendered in argument order.
-
-### 3.1 Options
+No path means the current directory. A file path inspects one file. Multiple
+roots are rendered in argument order.
 
 | Option | Meaning | Default |
 | --- | --- | --- |
-| `--peek` | Show the leading file or module documentation block. | off |
-| `--peek-lines <n>` | Maximum rendered lines per documentation block. Implies `--peek`. | `3` |
-| `--depth <n>` | Maximum directory depth below each root. Root is depth `0`. | unlimited |
-| `--symbols <level>` | `modules`, `public`, or `all`; see section 6. | `public` |
+| `--peek` | Show leading file documentation. | off |
+| `--peek-lines <n>` | Maximum nonblank documentation lines; implies `--peek`. | `3` |
+| `--depth <n>` | Maximum directory depth below each explicit root. | unlimited |
+| `--symbols <level>` | `modules`, `public`, or `all`. | `public` |
 | `--format <format>` | `tree` or `json`. | `tree` |
-| `--language <name>` | Restrict adapters; repeatable. | all supported |
 | `--hidden` | Include hidden entries unless otherwise ignored. | off |
-| `--no-ignore` | Do not apply ignore files or built-in ignored directory names. | off |
+| `--no-ignore` | Disable root `.gitignore` and built-in ignores. | off |
+| `--ascii` | Use ASCII connectors. | off |
 | `--color <when>` | `auto`, `always`, or `never`. | `auto` |
-| `--ascii` | Use ASCII tree connectors. | off |
-| `--version` | Print the program version and exit. | — |
+| `--version` | Print version and exit. | — |
 | `--help` | Print command help and exit. | — |
 
-Unknown options, missing option values, invalid enum values, negative depths,
-and nonexistent explicit paths are usage errors.
+`--peek-lines` must be a positive integer. `--depth` must be a non-negative
+integer; root is depth zero. Invalid choices and values fail command validation.
 
-`NO_COLOR` disables color when `--color` was not explicitly passed. Color must
-never appear in JSON.
+Effect CLI supplies shell completion generation, log-level selection, and wizard
+mode in addition to the options above.
+
+`NO_COLOR` disables automatic color. Explicit `--color always` takes precedence.
+JSON never contains color.
 
 ## 4. Discovery
 
-### 4.1 Traversal
+### 4.1 Platform boundary
 
-Discovery walks each directory recursively. It must not follow symbolic links in
-version 0.1. A symlink may be shown as a leaf only when it was explicitly passed
-or survives normal filtering.
+Discovery obtains `FileSystem.FileSystem` and `Path.Path` from the Effect context.
+It does not import `node:fs` or `node:path`. The production CLI provides these
+services with `NodeContext.layer`.
 
-Entries are sorted deterministically within each directory:
+Source files are read into memory individually. Source text is handed to an
+in-memory ts-morph project, which prevents the analyzer from bypassing the
+platform service boundary.
 
-1. directories by Unicode code-point order of name;
-2. files by Unicode code-point order of name; then
-3. source declarations in source order.
+### 4.2 Traversal
 
-Unreadable entries yield a diagnostic and do not stop other roots from being
-processed.
+Directories are recursive unless limited by `--depth`. Symlinks are displayed as
+leaf nodes and never followed.
 
-### 4.2 Filtering
+Entries are deterministic within each directory:
 
-By default, discovery excludes:
+1. directories in Unicode code-point name order;
+2. files and symlinks in Unicode code-point name order; and
+3. declarations in source order after deduplication.
 
-- hidden entries (a basename beginning with `.`);
-- paths ignored by the nearest applicable `.gitignore`; and
-- common dependency and build directories: `node_modules`, `dist`, `build`,
-  `_build`, `_opam`, `deps`, `.elixir_ls`, and `cover`.
+Empty directories are omitted unless an explicit depth boundary produces the
+empty root node. Multiple roots keep argument order.
 
-A later revision may expose a config file; v0.1 has no project configuration
-format.
+### 4.3 Source classification
 
-`--hidden` only changes hidden-entry filtering. It does not override ignore
-rules. `--no-ignore` disables `.gitignore` and the built-in directory list, but
-hidden entries still require `--hidden`.
-
-Only recognized source files are shown by default. Directories that contain no
-visible descendant after filtering are omitted. An explicitly passed file is
-shown even when its extension is unrecognized, but has no declarations.
-
-### 4.3 Limits
-
-The implementation must process files incrementally and must not read an entire
-repository into memory. A single file larger than 1 MiB is listed but not parsed;
-the tree adds an `unparsed: file too large` annotation and JSON adds a diagnostic.
-
-## 5. Shared document model
-
-Adapters return language-neutral nodes with these conceptual fields:
+Recognized TypeScript extensions:
 
 ```text
-Document
+.ts .tsx .mts .cts
+```
+
+Recognized JavaScript extensions:
+
+```text
+.js .jsx .mjs .cjs
+```
+
+Unrecognized descendants are omitted. An explicitly requested unrecognized file
+is shown with `language: null`, no declarations, and an `unsupported-file`
+diagnostic.
+
+Files larger than 1 MiB are shown but not read or parsed. They receive a
+`file-too-large` diagnostic.
+
+### 4.4 Ignore behavior
+
+Hidden basenames are excluded unless `--hidden` is passed.
+
+Unless `--no-ignore` is passed, discovery applies:
+
+- the `.gitignore` located at an explicit directory root, or beside an explicit
+  file root; and
+- built-in directory ignores: `.git`, `.elixir_ls`, `_build`, `_opam`, `build`,
+  `coverage`, `deps`, `dist`, and `node_modules`.
+
+Nested `.gitignore` layering is deferred. `--hidden` does not override ignore
+patterns. `--no-ignore` does not imply `--hidden`.
+
+### 4.5 Recovery
+
+An unreadable or nonexistent explicit root fails with `InspectError`. Unreadable
+descendants are skipped with a `filesystem-error` diagnostic so other entries can
+still be rendered.
+
+## 5. Shared Schema model
+
+All public output is described by Effect Schema and exported from `src/model.ts`.
+The conceptual model is:
+
+```text
+ModuleLsOutput
+  schemaVersion: 1
+  roots: TreeNode[]
+  diagnostics: Diagnostic[]
+
+TreeNode
+  DirectoryNode | FileNode | SymlinkNode
+
+DirectoryNode
+  type: "directory"
+  name: string
   path: string
-  language: string | null
+  children: TreeNode[]
+
+FileNode
+  type: "file"
+  name: string
+  path: string
+  language: "typescript" | "javascript" | null
   documentation: string | null
   declarations: Declaration[]
   diagnostics: Diagnostic[]
 
 Declaration
-  kind: string
+  kind: DeclarationKind
   name: string
-  visibility: public | private | unknown
+  visibility: "public" | "private" | "unknown"
   signature: string | null
   documentation: string | null
   location: { line: number, column: number }
   children: Declaration[]
 ```
 
-Line and column numbers are one-based. Adapters may return a partial document
-with diagnostics. A parse problem is not automatically a process failure.
+Declaration kinds are `namespace`, `class`, `function`, `variable`, `type`,
+`interface`, `enum`, `re-export`, and `default`.
 
-## 6. Symbol levels
+Paths use forward slashes. Paths beneath the current working directory are
+relative; outside paths are normalized absolute paths. Line and column numbers
+are one-based.
 
-`--symbols` controls which declarations are rendered:
+Optional information is represented as `null`, not an omitted field. Arrays are
+always present.
 
-- `modules` shows module-like containers only: modules, namespaces, module
-  types, protocols, implementations, and equivalent declarations.
-- `public` shows module-like containers plus declarations exported through the
-  language's normal public mechanism. This is the default.
-- `all` additionally shows recognized private or local declarations at the
-  adapter's indexed scope.
+## 6. ts-morph analysis
 
-Adapters perform shallow indexing. They index the top level of a file and direct
-members of recognized module containers; they do not index function-local
-bindings.
+### 6.1 Project configuration
 
-Signatures should be concise and single-line. When a full signature cannot be
-recovered cheaply, the adapter returns the declaration name without inventing a
-type.
+Each inspection creates one ts-morph `Project` with:
 
-## 7. Language adapters
+- an in-memory filesystem;
+- no automatic tsconfig source loading;
+- JavaScript allowed but not typechecked;
+- preserved JSX;
+- ESNext modules; and
+- the latest TypeScript syntax target.
 
-### 7.1 TypeScript and JavaScript
+Each discovered source string is created as a source file in this project.
+Project code is never run. No compiler, package manager, or network command is
+invoked.
 
-Extensions: `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`
+### 6.2 ESM and TypeScript declarations
 
-The adapter recognizes:
+The adapter indexes top-level:
 
-- exported `namespace`, `module`, `class`, `function`, `const`, `let`, and
-  `var` declarations;
-- exported `type`, `interface`, and `enum` declarations;
-- named declarations re-exported with `export { ... }` when their local
-  declaration is recoverable;
-- default named declarations; and
-- public declarations nested directly in a namespace or ambient module.
+- `function` and `class` declarations;
+- `const`, `let`, and `var` bindings;
+- `interface`, `type`, and `enum` declarations;
+- `namespace` and ambient `module` declarations;
+- named, star, and default exports; and
+- direct declarations inside namespace or ambient-module bodies.
 
-At `public`, unexported top-level declarations are omitted. At `all`, recognized
-unexported top-level declarations are included. Imports and star re-exports are
-not declarations. Object properties and function-local bindings are not
-indexed.
+Ordinary imports are not declarations. Named re-exports use the exported alias
+when present and retain a compact `from "specifier"` signature. Star re-exports
+are displayed as `export * from "specifier"`.
 
-This deliberately supports the common Effect module style: a file is the module,
-and its exported types, constructors, refinements, and pipeable combinators form
-the visible API. The adapter does not need Effect as a dependency and does not
-special-case particular Effect package names.
+Function signatures include parameter names, rest markers, and optional markers.
+Variable signatures include an explicit type annotation when present. Inferred
+types are not printed.
 
-### 7.2 OCaml
+Top-level declarations with an ESM export or default-export modifier are public.
+Unexported top-level declarations are private. Declarations in `.d.ts` files are
+public by default. Nested namespace members use their own visibility unless they
+are ambient declarations.
 
-Extensions: `.ml`, `.mli`
+### 6.3 CommonJS
 
-The adapter recognizes top-level:
+The JavaScript adapter recognizes these assignment shapes:
 
-- `module` and `module type` declarations;
-- `type`, `exception`, `external`, `class`, and `class type` declarations;
-- `val` declarations; and
-- named `let` bindings, including operator names.
-
-Declarations inside an explicit `struct ... end` or `sig ... end` module are
-children of that module when nesting can be recovered. Functor declarations keep
-their declared module name and may include a shortened signature.
-
-An `.mli` declaration is public unless syntax says otherwise. In `.ml`, top-level
-declarations have `unknown` visibility because an unseen interface may restrict
-them; they appear at `public` and `all`. Local bindings inside expression-level
-`let` constructs are not indexed.
-
-### 7.3 Elixir
-
-Extensions: `.ex`, `.exs`
-
-The adapter recognizes:
-
-- `defmodule`, `defprotocol`, and `defimpl` containers;
-- public `def`, `defmacro`, and `defdelegate` declarations;
-- private `defp`, `defmacrop`, and `defguardp` declarations at `all`;
-- public `defguard` declarations;
-- `@type`, `@typep`, `@opaque`, `@callback`, and `@macrocallback`
-  declarations; and
-- function name and arity for ordinary heads, including multiple clauses
-  collapsed into one declaration.
-
-Default arguments contribute to the callable arities when they can be recovered;
-tree output may use a compact form such as `fetch/1,2`. Generated functions and
-declarations hidden inside arbitrary macros are outside v0.1.
-
-`defimpl Protocol, for: Type` is displayed as `Protocol for Type` when both names
-can be recovered.
-
-## 8. Documentation peeking
-
-`--peek` extracts documentation only; it never executes code or expands macros.
-The selected text is normalized by:
-
-1. removing comment delimiters and conventional decoration such as a leading
-   `*`;
-2. dedenting by common whitespace;
-3. trimming leading and trailing blank lines;
-4. collapsing internal whitespace only when required for a one-line tree label;
-5. rendering at most `--peek-lines`; and
-6. adding `…` when nonblank content was truncated.
-
-The preferred documentation source is:
-
-| Language | Precedence |
-| --- | --- |
-| TypeScript/JavaScript | leading `/** ... */`, then a leading contiguous `//` block, then `/* ... */` |
-| OCaml | leading `(** ... *)`, then `(* ... *)` |
-| Elixir | the containing module's literal `@moduledoc`, then a leading `#` block |
-
-A UTF-8 BOM, shebang, blank lines, and language pragmas that cannot carry prose
-may occur before the documentation block. License banners are not automatically
-distinguished from documentation in v0.1.
-
-Only file/module documentation is shown in tree mode in v0.1. Declaration-level
-documentation may be captured in the shared model and JSON but does not expand
-the default tree.
-
-Dynamic Elixir moduledocs (for example, function calls or interpolation that
-cannot be read as a literal) are omitted with no evaluation.
-
-## 9. Tree output
-
-Tree output uses UTF-8 connectors unless `--ascii` is set. A source file is a
-filesystem node. Its documentation and declarations are child nodes. Nested
-module declarations own their direct declarations.
-
-Example:
-
-```text
-lib/
-├── cache.ts
-│   │ An effectful cache with explicit lifetime management.
-│   ├── type Cache
-│   ├── make
-│   ├── get
-│   └── set
-├── parser.mli
-│   ├── module Token
-│   ├── type error
-│   └── val parse
-└── accounts.ex
-    └── Accounts
-        ├── type user
-        ├── create_user/1
-        └── fetch_user/1
+```js
+exports.name = value
+module.exports.name = value
+module.exports = { name, alias: value, method() {} }
+module.exports = value
 ```
 
-Kind labels are included when they disambiguate structure (`module`, `type`,
-`class`, `val`) and may be omitted for ordinary functions and values. The output
-must not depend on terminal width in v0.1; renderers truncate only according to
-explicit limits.
+Named properties become public variables. A non-object `module.exports`
+assignment becomes a default export.
 
-Diagnostics go to standard error in tree mode and include the path. Normal tree
-output goes to standard output.
+CommonJS assignments constructed indirectly through aliases, mutation helpers,
+or dynamic property names are outside v0.1.
 
-## 10. JSON output
+### 6.4 Deduplication
 
-JSON output is a single UTF-8 object with this top-level shape:
+Declarations are deduplicated by kind and name at each indexed scope. This is
+needed for overloads and for a private local declaration later exposed by a
+CommonJS assignment. When visibility differs, the public occurrence wins while
+the first position remains stable.
+
+### 6.5 Symbol levels
+
+- `modules` retains only namespace and ambient-module containers. Their
+  non-module children are removed.
+- `public` retains public declarations and namespace containers. Private direct
+  children are removed. This is the default.
+- `all` retains every recognized declaration at indexed scopes.
+
+Files remain visible even when filtering removes every declaration.
+
+## 7. Documentation peeking
+
+Peek mode recognizes these leading forms:
+
+```text
+/** JSDoc */
+/* block comment */
+// contiguous line comments
+```
+
+A UTF-8 BOM, shebang, blank space, or leading triple-slash reference directives
+may precede the selected block.
+
+Normalization:
+
+1. removes comment delimiters and conventional leading `*` decoration;
+2. removes common indentation;
+3. trims leading and trailing blank lines;
+4. omits blank lines in tree output;
+5. renders at most `--peek-lines` nonblank lines; and
+6. appends `…` to the last rendered line when content was truncated.
+
+The complete normalized documentation string is retained in JSON. The line limit
+is a tree-rendering concern.
+
+JSDoc immediately attached to a declaration is also retained on that declaration
+in JSON, but declaration documentation is not expanded in the tree.
+
+License banners are not distinguished automatically from module documentation.
+
+## 8. Rendering
+
+### 8.1 Tree
+
+Directory names end with `/`; symlink names end with `@`. Files own documentation
+lines and declarations. Namespace declarations own their direct children.
+
+Unicode connectors are `├──`, `└──`, and `│`. `--ascii` substitutes `+--`,
+`` `-- ``, and `|` forms.
+
+Directories, source files, declaration kinds, and documentation may be colored.
+Rendering is deterministic and does not depend on terminal width.
+
+Tree output goes through `Terminal.display`. Diagnostics are written separately
+to standard error and include path, severity, message, and code.
+
+### 8.2 JSON
+
+JSON is encoded through `ModuleLsOutputSchema`, pretty-printed with two spaces,
+and emitted as one UTF-8 object:
 
 ```json
 {
@@ -315,85 +320,90 @@ JSON output is a single UTF-8 object with this top-level shape:
 }
 ```
 
-Filesystem nodes contain `type` (`directory`, `file`, or `symlink`), `name`,
-`path`, and `children` where applicable. File nodes additionally contain
-`language`, `documentation`, `declarations`, and file-local `diagnostics` using
-the model in section 5.
+It contains no ANSI escapes or separate progress messages. Diagnostics remain in
+the JSON object and are not duplicated to standard error.
 
-Paths are slash-separated and relative to the current working directory when
-possible. Explicit roots outside it use normalized absolute paths. Optional or
-unknown scalar fields are emitted as `null`, not omitted. Arrays are always
-present. This makes the schema convenient for agents without losing the
-distinction between empty and unknown values.
+## 9. Effect architecture
 
-JSON output contains no ANSI escapes and no separate progress messages. Fatal or
-root-level diagnostics are present in the JSON object as well as determining the
-exit status.
+The executable composition is:
 
-## 11. Diagnostics and exit status
+```text
+Command.run(command)(process.argv)
+  -> Schema.decodeUnknown(InspectOptionsSchema)
+  -> discover
+  -> analyze
+  -> renderTree | renderJson
+  -> Terminal.display
+  -> Effect.provide(NodeContext.layer)
+  -> NodeRuntime.runMain
+```
 
-| Code | Meaning |
-| --- | --- |
-| `0` | All explicit roots were inspected; recoverable parse diagnostics may exist. |
-| `1` | At least one failure prevented useful inspection of part of a root. |
-| `2` | Command-line usage error. |
+Responsibilities:
 
-When multiple roots produce different outcomes, the highest exit code wins.
-Broken pipes terminate quietly with success, following normal Unix pipeline
-behavior.
+- `@effect/cli` owns argv parsing, help, versioning, and completions.
+- Effect Schema validates input and describes every public output node.
+- `@effect/platform` supplies filesystem, path, terminal, and platform errors.
+- tagged `InspectError` and `RenderError` values describe domain failures.
+- ts-morph performs synchronous AST work inside a captured Effect boundary.
+- pure render helpers make tree output independently testable.
+- `NodeRuntime.runMain` handles process signals, finalization, error reporting,
+  and exit status.
 
-## 12. Architecture constraints
+The library exports `inspect` for callers that want the model without terminal
+output and `run` for callers that want normal CLI rendering with supplied
+platform services.
 
-The implementation should favor pure transformations and explicit data:
+## 10. Diagnostics and process behavior
 
-- discovery yields filesystem entries;
-- extension classification selects an adapter;
-- adapters return the shared model without printing;
-- filters transform model trees without reparsing; and
-- renderers consume only filtered model trees.
+Diagnostic codes currently include:
 
-Language adapters must be independently testable with source strings. Filesystem
-discovery must be independently testable with temporary fixtures. The tree and
-JSON renderers must be snapshot-testable from in-memory model values.
+- `unsupported-file`;
+- `file-too-large`;
+- `filesystem-error`; and
+- `parse-error`.
 
-No adapter may invoke a compiler, execute project code, install dependencies, or
-access the network. Version 0.1 should avoid native parser dependencies unless a
-handwritten tolerant scanner proves materially unreliable against the acceptance
-fixtures.
+Successful inspection exits zero even when a recoverable per-file diagnostic is
+present. Invalid CLI input, an invalid option schema, an unreadable explicit
+root, schema encoding failure, or platform display failure terminates the Effect
+and is reported by `NodeRuntime.runMain` with a nonzero exit.
 
-## 13. Acceptance criteria
+Broken-pipe behavior is delegated to the current platform Terminal and runtime.
 
-Version 0.1 is complete when:
+## 11. Verification
 
-1. `module-ls` and `mls` behave identically.
-2. Running with no arguments inspects the current directory.
-3. Fixtures for all three adapter families produce the expected nested modules
-   and public declarations.
-4. `--symbols modules|public|all` changes output as specified.
-5. `--peek` extracts, normalizes, limits, and truncates each supported comment
-   style without executing source.
-6. Hidden, ignored, oversized, unreadable, symlinked, empty, and explicitly
-   passed paths have tests.
-7. Tree output is deterministic and has ASCII and no-color coverage.
-8. JSON output validates against checked-in schema-version-1 fixtures.
-9. Partial parse failures preserve recovered declarations and emit diagnostics.
-10. Piping into a command that closes early does not print a stack trace.
-11. The CLI performs no writes inside the inspected project.
-12. README examples are exercised as integration tests or generated from tested
-    fixtures to prevent drift.
+The prototype test suite covers:
 
-## 14. Deferred decisions
+- JSDoc, line-comment, shebang, and triple-slash peek extraction;
+- public, module-only, and all-symbol filtering;
+- nested namespace members;
+- CommonJS object exports;
+- deterministic Unicode and ASCII rendering;
+- Effect Schema JSON encoding and decoding;
+- root `.gitignore` and hidden-file behavior;
+- depth limiting; and
+- source and built CLI execution.
 
-The following are intentionally deferred until after v0.1:
+The verification command is:
 
-- additional languages and user-defined adapters;
-- configuration files and custom ignore patterns;
-- import, dependency, call, or type relationship graphs;
-- declaration-doc expansion in tree output;
-- watch mode, caching, and editor or MCP integrations;
-- Markdown and other renderers; and
-- merging `.mli` and `.ml` or re-exported TypeScript declarations across files.
+```sh
+pnpm check
+```
 
-These features should be evaluated against the core constraint: `module-ls` must
-remain a fast way to understand where useful code lives, not become a second
-language server.
+README examples use the checked-in integration fixture.
+
+## 12. Deferred work
+
+The following are not part of the functional prototype:
+
+- nested `.gitignore` layering and configuration files;
+- tsconfig discovery and cross-file export resolution;
+- detailed parse diagnostics from the TypeScript compiler;
+- destructured binding expansion and dynamic CommonJS patterns;
+- class and interface members;
+- declaration-document expansion in tree output;
+- additional languages or user-defined adapters;
+- Markdown, MCP, watch, or cached-index renderers; and
+- npm publication and license selection.
+
+Future features must preserve the core constraint: `module-ls` should remain a
+fast way to learn where useful code lives, not become another language server.

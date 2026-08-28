@@ -1,0 +1,71 @@
+import { FileSystem, Path, Terminal } from "@effect/platform"
+import type { PlatformError } from "@effect/platform/Error"
+import { Config, Console, Effect, Option, ParseResult, Schema } from "effect"
+
+import { analyze } from "./analyzer.js"
+import { discover } from "./discovery.js"
+import { InspectError, RenderError } from "./errors.js"
+import {
+  InspectOptionsSchema,
+  type InspectOptions,
+  type ModuleLsOutput
+} from "./model.js"
+import { renderJson, renderTree } from "./render.js"
+
+export const inspect = (
+  input: unknown
+): Effect.Effect<
+  ModuleLsOutput,
+  ParseResult.ParseError | InspectError,
+  FileSystem.FileSystem | Path.Path
+> =>
+  Schema.decodeUnknown(InspectOptionsSchema)(input).pipe(
+    Effect.flatMap((options) => discover(options).pipe(
+      Effect.flatMap((discovery) => analyze(discovery, options))
+    ))
+  )
+
+const shouldUseColor = (
+  options: InspectOptions,
+  terminal: Terminal.Terminal
+): Effect.Effect<boolean> => {
+  if (options.format === "json" || options.color === "never") return Effect.succeed(false)
+  if (options.color === "always") return Effect.succeed(true)
+  return Effect.all({
+    tty: terminal.isTTY,
+    noColor: Config.option(Config.string("NO_COLOR")).pipe(
+      Effect.catchAll(() => Effect.succeed(Option.none<string>()))
+    )
+  }).pipe(Effect.map(({ noColor, tty }) => tty && Option.isNone(noColor)))
+}
+
+const printDiagnostics = (output: ModuleLsOutput): Effect.Effect<void> =>
+  Effect.forEach(
+    output.diagnostics,
+    (item) => Console.error(
+      `${item.path === null ? "module-ls" : item.path}: ${item.severity}: ${item.message} [${item.code}]`
+    ),
+    { discard: true }
+  )
+
+export const run = (
+  input: unknown
+): Effect.Effect<
+  void,
+  ParseResult.ParseError | InspectError | RenderError | PlatformError,
+  Terminal.Terminal | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const options = yield* Schema.decodeUnknown(InspectOptionsSchema)(input)
+    const terminal = yield* Terminal.Terminal
+    const output = yield* discover(options).pipe(
+      Effect.flatMap((discovery) => analyze(discovery, options))
+    )
+    const color = yield* shouldUseColor(options, terminal)
+    const rendered = options.format === "json"
+      ? yield* renderJson(output)
+      : renderTree(output, options, color)
+
+    yield* terminal.display(`${rendered}\n`)
+    if (options.format === "tree") yield* printDiagnostics(output)
+  })
