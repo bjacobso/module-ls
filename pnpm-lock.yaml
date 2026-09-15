@@ -42,9 +42,15 @@ importers:
 
   web:
     dependencies:
+      '@foldkit/ui':
+        specifier: 0.156.0
+        version: 0.156.0(effect@4.0.0-rc.112)(foldkit@0.156.0(effect@4.0.0-rc.112))
       '@foldworks/ui':
         specifier: 0.1.0
         version: 0.1.0(effect@4.0.0-rc.112)
+      '@lucide/icons':
+        specifier: 1.40.0
+        version: 1.40.0
       '@stylexjs/stylex':
         specifier: 0.19.0
         version: 0.19.0

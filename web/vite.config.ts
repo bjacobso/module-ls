@@ -2,9 +2,17 @@ import { foldkit } from "@foldkit/vite-plugin"
 import stylex from "@stylexjs/unplugin"
 import { defineConfig } from "vite"
 
+type StylexViteOptions = NonNullable<Parameters<typeof stylex.vite>[0]> & {
+  readonly externalPackages: ReadonlyArray<string>
+}
+
+const stylexOptions: StylexViteOptions = {
+  externalPackages: ["@foldworks/ui"]
+}
+
 export default defineConfig({
   plugins: [
-    stylex.vite(),
+    stylex.vite(stylexOptions),
     foldkit({ devToolsMcpPort: 9988 })
   ],
   build: {
