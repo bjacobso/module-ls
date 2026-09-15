@@ -4,6 +4,7 @@ import { Route } from "foldkit"
 export const AppRoute = Route.defineRouteUnion({
   Explorer: {},
   File: { path: S.String },
+  Walkthrough: { path: S.String },
   NotFound: { path: S.String }
 })
 export type AppRoute = typeof AppRoute.Type
@@ -15,7 +16,13 @@ export const fileRouter = pipe(
   Route.mapTo(AppRoute.File)
 )
 
+export const walkthroughRouter = pipe(
+  Route.literal("walkthrough"),
+  Route.slash(Route.restString("path")),
+  Route.mapTo(AppRoute.Walkthrough)
+)
+
 export const urlToAppRoute = Route.parseUrlWithFallback(
-  Route.oneOf(fileRouter, explorerRouter),
+  Route.oneOf(walkthroughRouter, fileRouter, explorerRouter),
   AppRoute.NotFound
 )

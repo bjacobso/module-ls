@@ -46,6 +46,7 @@ export const styles = stylex.create({
   brand: { fontSize: 15, fontWeight: 750, letterSpacing: -0.2, margin: 0 },
   rootPath: { color: "#746e65", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   actions: { alignItems: "center", display: "flex", gap: 10 },
+  navLink: { borderColor: line, borderRadius: 8, borderStyle: "solid", borderWidth: 1, color: ink, fontSize: 12, fontWeight: 650, paddingBlock: 7, paddingInline: 11, textDecoration: "none" },
   meta: { color: "#746e65", fontSize: 12, whiteSpace: "nowrap" },
   refresh: {
     backgroundColor: "transparent",
@@ -104,5 +105,22 @@ export const styles = stylex.create({
   hoverCard: { backgroundColor: "#171b22", borderColor: "#39414e", borderRadius: 8, borderStyle: "solid", borderWidth: 1, boxShadow: "0 12px 32px rgba(0,0,0,.28)", color: "#e6edf3", maxWidth: 480, padding: 12 },
   hoverSignature: { display: "block", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 12, whiteSpace: "pre-wrap" },
   hoverDocumentation: { color: "#b7c0cc", fontSize: 12, lineHeight: 1.5, marginBlockEnd: 0, marginBlockStart: 9, whiteSpace: "pre-wrap" },
-  error: { backgroundColor: "#fff0ed", borderColor: "#e7aaa1", borderRadius: 8, borderStyle: "solid", borderWidth: 1, color: "#8c2f24", fontSize: 13, margin: 20, padding: 14 }
+  error: { backgroundColor: "#fff0ed", borderColor: "#e7aaa1", borderRadius: 8, borderStyle: "solid", borderWidth: 1, color: "#8c2f24", fontSize: 13, margin: 20, padding: 14 },
+  walkthroughMain: { backgroundColor: "#fbf8f2", minHeight: 0, overflowY: "auto" },
+  walkthrough: { marginInline: "auto", maxWidth: 980, paddingBlock: 64, paddingInline: 32 },
+  walkthroughHeader: { borderBottomColor: line, borderBottomStyle: "solid", borderBottomWidth: 1, marginBottom: 32, paddingBottom: 28 },
+  walkthroughTitle: { fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 42, fontWeight: 500, letterSpacing: -1.2, lineHeight: 1.1, marginBlockEnd: 14, marginBlockStart: 12 },
+  walkthroughSummary: { color: "#625d55", fontSize: 16, lineHeight: 1.65, margin: 0, maxWidth: 760 },
+  walkthroughAudience: { color: "#8a8177", fontSize: 11, fontWeight: 700, letterSpacing: 0.7, marginTop: 14, textTransform: "uppercase" },
+  walkthroughSteps: { display: "grid", gap: 18, listStyle: "none", margin: 0, padding: 0 },
+  walkthroughStep: { display: "grid", gap: 16, gridTemplateColumns: "42px minmax(0, 1fr)" },
+  walkthroughNumber: { alignItems: "center", backgroundColor: ink, borderRadius: 999, color: "#fffdf8", display: "flex", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 11, fontWeight: 700, height: 34, justifyContent: "center", width: 34 },
+  walkthroughStepContent: { backgroundColor: "#ffffff", borderColor: line, borderRadius: 12, borderStyle: "solid", borderWidth: 1, padding: 20 },
+  walkthroughStepMeta: { color: violet, fontSize: 9, fontWeight: 800, letterSpacing: 1.1, textTransform: "uppercase" },
+  walkthroughStepTitle: { fontSize: 17, marginBlockEnd: 8, marginBlockStart: 5 },
+  walkthroughBody: { color: "#625d55", fontSize: 14, lineHeight: 1.6, marginBlock: 0 },
+  walkthroughTarget: { alignItems: "center", backgroundColor: "#f1ede6", borderRadius: 7, color: ink, display: "inline-flex", fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: 11, gap: 0, marginTop: 14, paddingBlock: 8, paddingInline: 10, textDecoration: "none" },
+  walkthroughHighlights: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 },
+  walkthroughHighlight: { backgroundColor: "#eee8ff", borderRadius: 5, color: "#5f42c7", fontSize: 10, paddingBlock: 3, paddingInline: 6 },
+  walkthroughNotes: { color: "#746e65", fontSize: 12, lineHeight: 1.55, marginBlockEnd: 0, marginBlockStart: 12, paddingInlineStart: 20 }
 })

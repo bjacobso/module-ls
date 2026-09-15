@@ -30,6 +30,7 @@ module-ls [options] [path ...]
 module-ls show <file[#symbol]> [--symbol <qualified-name>]
 module-ls extract <file[#symbol]> [--symbol <qualified-name>]
 module-ls annotate <file[#symbol]> [--root <path>] [--no-types]
+module-ls walkthrough <definition.json|yaml> [--format tree|json]
 module-ls serve [path] [--port 4310] [--no-types] [--open]
 ```
 
@@ -148,6 +149,13 @@ tokens, TypeScript quick-info ranges, and in-root definition targets. Annotation
 offsets are 0-based UTF-16 code units relative to `source`. Light and dark token
 colors are both present, and hover/definition collections may be empty.
 
+`WalkthroughDocumentSchema` version 1 describes an ordered code tour. A document
+contains an id, title, summary, audiences, and recursive steps. Each step has a
+stable id, kind, narration, notes, children, and an optional source target with
+a path, symbol or line range, and named highlights. JSON, YAML, the fluent
+`Walkthrough.make(...).add(...)` DSL, CLI output, and web rendering all share
+this schema.
+
 ## 6. Rendering and selection
 
 Tree output includes declaration line ranges. It traverses three directory
@@ -171,6 +179,7 @@ GET /api/source?path=<repository-relative-file>
 GET /api/source?path=<repository-relative-file>&symbol=<qualified-name>
 GET /api/annotated?path=<repository-relative-file>[&symbol=<qualified-name>]
 GET /api/search?q=<query>
+GET /api/walkthrough?path=<repository-relative-json-or-yaml>
 ```
 
 API responses are schema encoded and uncached. Source paths resolve against the
@@ -192,7 +201,8 @@ HTTP JSON remains the runtime boundary between the Node service and browser app.
 The UI provides a recursive tree, filtering, file routes, qualified symbols,
 documentation, highlighted source, type hover, go-to-definition, fingerprints,
 light/dark code themes, refresh, and Git badges. It does not edit files or
-render full patches.
+render full patches. `/walkthrough/<definition>` renders schema-validated code
+tours with navigable source targets.
 
 ## 9. Effect architecture
 

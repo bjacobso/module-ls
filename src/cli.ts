@@ -10,6 +10,7 @@ import { run } from "./app.js"
 import { AnnotatedSourceSchema } from "./model.js"
 import { renderSelectedJson, renderSelectedSource, selectSource } from "./selection.js"
 import { serveExplorer } from "./server.js"
+import { loadWalkthrough, renderWalkthroughJson, renderWalkthroughTree } from "./walkthrough.js"
 
 const DEFAULT_TREE_DEPTH = 3
 
@@ -174,8 +175,30 @@ const annotateCommand = Command.make(
   })
 ).pipe(Command.withDescription("Emit highlighted source with type hover and definition annotations"))
 
+const walkthroughPath = Argument.string("definition").pipe(
+  Argument.withDescription("Walkthrough definition in JSON or YAML")
+)
+
+const walkthroughFormat = Flag.choice("format", ["tree", "json"] as const).pipe(
+  Flag.withDefault("tree" as const),
+  Flag.withDescription("Render a human-readable walkthrough or normalized schema JSON")
+)
+
+const walkthroughCommand = Command.make(
+  "walkthrough",
+  { walkthroughPath, walkthroughFormat },
+  ({ walkthroughPath, walkthroughFormat }) => Effect.gen(function*() {
+    const terminal = yield* Terminal.Terminal
+    const walkthrough = yield* loadWalkthrough(walkthroughPath)
+    const output = walkthroughFormat === "json"
+      ? yield* renderWalkthroughJson(walkthrough)
+      : renderWalkthroughTree(walkthrough)
+    yield* terminal.display(`${output}\n`)
+  })
+).pipe(Command.withDescription("Render a schema-validated code walkthrough"))
+
 export const command = inspectCommand.pipe(
-  Command.withSubcommands([showCommand, extractCommand, annotateCommand, serveCommand])
+  Command.withSubcommands([showCommand, extractCommand, annotateCommand, walkthroughCommand, serveCommand])
 )
 
 const cli = Command.run(command, {

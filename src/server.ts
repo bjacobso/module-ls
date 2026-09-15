@@ -18,6 +18,7 @@ import {
 } from "./model.js"
 import { searchSnapshot } from "./search.js"
 import { selectSource } from "./selection.js"
+import { WalkthroughDocumentSchema, loadWalkthrough } from "./walkthrough.js"
 
 const errorResponse = (cause: unknown, status = 500): HttpServerResponse.HttpServerResponse =>
   HttpServerResponse.jsonUnsafe({
@@ -132,6 +133,21 @@ export const serveExplorer = (
       onSuccess: (response) => response
     }))
 
+    const walkthroughHandler = Effect.gen(function*() {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const url = new URL(request.url, "http://127.0.0.1")
+      const requested = url.searchParams.get("path")
+      if (requested === null) return errorResponse("Missing path query parameter", 400)
+      const path = containedPath(pathService, root, requested)
+      if (path === null) return errorResponse("Path is outside the explorer root", 403)
+      if (!/\.(?:json|ya?ml)$/iu.test(path)) return errorResponse("Walkthrough must be JSON or YAML", 400)
+      const walkthrough = yield* loadWalkthrough(path)
+      return noStore(yield* HttpServerResponse.schemaJson(WalkthroughDocumentSchema)(walkthrough))
+    }).pipe(Effect.match({
+      onFailure: (cause) => errorResponse(cause, 404),
+      onSuccess: (response) => response
+    }))
+
     const staticHandler = Effect.gen(function*() {
       const request = yield* HttpServerRequest.HttpServerRequest
       const pathname = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname)
@@ -159,6 +175,7 @@ export const serveExplorer = (
       if (pathname === "/api/source") return yield* sourceHandler
       if (pathname === "/api/annotated") return yield* annotatedHandler
       if (pathname === "/api/search") return yield* searchHandler
+      if (pathname === "/api/walkthrough") return yield* walkthroughHandler
       return yield* staticHandler
     })
     const server = HttpServer.serve(application).pipe(

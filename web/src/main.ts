@@ -12,16 +12,19 @@ import { toString as urlToString } from "foldkit/url"
 import {
   AnnotatedSource,
   ExplorerSnapshot,
+  WalkthroughDocument,
   fetchAnnotated,
   fetchTree,
+  fetchWalkthrough,
   type DefinitionAnnotation,
   type ExplorerDirectoryType,
   type ExplorerDeclaration,
   type ExplorerFile,
   type HighlightedToken,
-  type HoverAnnotation
+  type HoverAnnotation,
+  type WalkthroughStepType
 } from "./api.js"
-import { AppRoute, fileRouter, urlToAppRoute } from "./route.js"
+import { AppRoute, fileRouter, urlToAppRoute, walkthroughRouter } from "./route.js"
 import { styles } from "./styles.js"
 
 const cx = (...tokens: ReadonlyArray<StyleXStyles>): string =>
@@ -31,6 +34,7 @@ export const Model = S.Struct({
   route: AppRoute,
   tree: S.NullOr(ExplorerSnapshot),
   selected: S.NullOr(AnnotatedSource),
+  walkthrough: S.NullOr(WalkthroughDocument),
   selectedPath: S.NullOr(S.String),
   selectedSymbol: S.NullOr(S.String),
   focusLine: S.NullOr(S.Number),
@@ -39,6 +43,7 @@ export const Model = S.Struct({
   theme: S.Literals(["light", "dark"]),
   isLoadingTree: S.Boolean,
   isLoadingSource: S.Boolean,
+  isLoadingWalkthrough: S.Boolean,
   error: S.NullOr(S.String)
 })
 export type Model = typeof Model.Type
@@ -53,8 +58,10 @@ export const Message = defineMessageUnion({
   CompletedScroll: {},
   FailedFetchSource: { error: S.String },
   FailedFetchTree: { error: S.String },
+  FailedFetchWalkthrough: { error: S.String },
   SucceededFetchSource: { selected: AnnotatedSource },
   SucceededFetchTree: { tree: ExplorerSnapshot },
+  SucceededFetchWalkthrough: { walkthrough: WalkthroughDocument },
   TypedQuery: { value: S.String }
 })
 export type Message = typeof Message.Type
@@ -73,6 +80,15 @@ const FetchSource = Command.define("FetchSource", {
   execute: ({ path, symbol }) => fetchAnnotated(path, symbol).pipe(Effect.match({
     onFailure: (error) => Message.FailedFetchSource({ error }),
     onSuccess: (selected) => Message.SucceededFetchSource({ selected })
+  }))
+})
+
+const FetchWalkthrough = Command.define("FetchWalkthrough", {
+  args: { path: S.String },
+  messages: [Message.SucceededFetchWalkthrough, Message.FailedFetchWalkthrough],
+  execute: ({ path }) => fetchWalkthrough(path).pipe(Effect.match({
+    onFailure: (error) => Message.FailedFetchWalkthrough({ error }),
+    onSuccess: (walkthrough) => Message.SucceededFetchWalkthrough({ walkthrough })
   }))
 })
 
@@ -114,6 +130,7 @@ const initialModel = (route: AppRoute, url: Url): Model => ({
   route,
   tree: null,
   selected: null,
+  walkthrough: null,
   selectedPath: route._tag === "File" ? route.path : null,
   selectedSymbol: route._tag === "File" ? symbolFromUrl(url) : null,
   focusLine: route._tag === "File" ? lineFromUrl(url) : null,
@@ -122,6 +139,7 @@ const initialModel = (route: AppRoute, url: Url): Model => ({
   theme: "light",
   isLoadingTree: true,
   isLoadingSource: route._tag === "File",
+  isLoadingWalkthrough: route._tag === "Walkthrough",
   error: null
 })
 
@@ -132,7 +150,8 @@ export const init: Runtime.RoutingApplicationInit<Model, Message> = (url) => {
     model: initialModel(route, url),
     commands: [
       FetchTree(),
-      ...(route._tag === "File" ? [FetchSource({ path: route.path, symbol })] : [])
+      ...(route._tag === "File" ? [FetchSource({ path: route.path, symbol })] : []),
+      ...(route._tag === "Walkthrough" ? [FetchWalkthrough({ path: route.path })] : [])
     ]
   }
 }
@@ -143,6 +162,22 @@ export const update = (model: Model, message: Message): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ChangedUrl: ({ url }) => {
       const route = urlToAppRoute(url as Url)
+      if (route._tag === "Walkthrough") {
+        return {
+          model: evo(model, {
+            route: () => route,
+            selected: () => null,
+            selectedPath: () => null,
+            selectedSymbol: () => null,
+            focusLine: () => null,
+            walkthrough: () => null,
+            isLoadingSource: () => false,
+            isLoadingWalkthrough: () => true,
+            error: () => null
+          }),
+          commands: [FetchWalkthrough({ path: route.path })]
+        }
+      }
       if (route._tag !== "File") {
         return { model: evo(model, {
           route: () => route,
@@ -150,7 +185,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           selectedPath: () => null,
           selectedSymbol: () => null,
           focusLine: () => null,
-          isLoadingSource: () => false
+          walkthrough: () => null,
+          isLoadingSource: () => false,
+          isLoadingWalkthrough: () => false
         }) }
       }
       const nextUrl = url as Url
@@ -161,7 +198,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           selectedPath: () => route.path,
           selectedSymbol: () => symbol,
           focusLine: () => lineFromUrl(nextUrl),
+          walkthrough: () => null,
           isLoadingSource: () => true,
+          isLoadingWalkthrough: () => false,
           error: () => null
         }),
         commands: [FetchSource({ path: route.path, symbol })]
@@ -195,6 +234,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     FailedFetchTree: ({ error }) => ({
       model: evo(model, { isLoadingTree: () => false, error: () => error })
     }),
+    FailedFetchWalkthrough: ({ error }) => ({
+      model: evo(model, { isLoadingWalkthrough: () => false, error: () => error })
+    }),
     SucceededFetchSource: ({ selected }) => ({
       model: evo(model, {
         selected: () => selected,
@@ -206,7 +248,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       commands: model.focusLine === null ? [] : [ScrollToLine({ line: model.focusLine })]
     }),
     SucceededFetchTree: ({ tree }) => {
-      const first = model.selectedPath === null ? tree.files[0] : undefined
+      const first = model.route._tag === "Explorer" && model.selectedPath === null ? tree.files[0] : undefined
       const selectedPath = model.selectedPath ?? first?.path
       const firstDirectories = selectedPath === undefined
         ? []
@@ -223,6 +265,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         commands: first === undefined ? [] : [FetchSource({ path: first.path, symbol: null })]
       }
     },
+    SucceededFetchWalkthrough: ({ walkthrough }) => ({
+      model: evo(model, {
+        walkthrough: () => walkthrough,
+        isLoadingWalkthrough: () => false,
+        error: () => null
+      })
+    }),
     TypedQuery: ({ value }) => ({ model: evo(model, { query: () => value }) })
   })
 
@@ -454,6 +503,67 @@ const sourceView = (model: Model, h: HtmlBuilder<Message>): Html => {
   ])
 }
 
+const walkthroughTargetUrl = (step: WalkthroughStepType): string | null => {
+  if (step.target === undefined) return null
+  if (step.target.symbol !== undefined) {
+    return fileUrl(step.target.path, `symbol=${encodeURIComponent(step.target.symbol)}`)
+  }
+  return fileUrl(step.target.path, step.target.line === undefined ? null : `L${step.target.line}`)
+}
+
+const walkthroughStepsView = (
+  steps: ReadonlyArray<WalkthroughStepType>,
+  h: HtmlBuilder<Message>,
+  prefix = ""
+): Html => h.ol([h.Class(cx(styles.walkthroughSteps))], steps.map((step, index) => {
+  const number = prefix === "" ? `${index + 1}` : `${prefix}.${index + 1}`
+  const targetUrl = walkthroughTargetUrl(step)
+  return h.li([h.Class(cx(styles.walkthroughStep)), h.Key(step.id)], [
+    h.div([h.Class(cx(styles.walkthroughNumber)), h.AriaHidden(true)], [number]),
+    h.div([h.Class(cx(styles.walkthroughStepContent))], [
+      h.div([h.Class(cx(styles.walkthroughStepMeta))], [step.kind]),
+      h.h2([h.Class(cx(styles.walkthroughStepTitle))], [step.title]),
+      h.p([h.Class(cx(styles.walkthroughBody))], [step.body]),
+      ...(targetUrl === null || step.target === undefined ? [] : [
+        h.a([h.Href(targetUrl), h.Class(cx(styles.walkthroughTarget))], [
+          step.target.path,
+          ...(step.target.symbol === undefined ? [] : [h.strong([], [`#${step.target.symbol}`])]),
+          ...(step.target.line === undefined ? [] : [h.span([], [
+            `:L${step.target.line}${step.target.endLine === undefined ? "" : `–${step.target.endLine}`}`
+          ])])
+        ]),
+        ...(step.target.highlight === undefined || step.target.highlight.length === 0
+          ? []
+          : [h.div([h.Class(cx(styles.walkthroughHighlights))], step.target.highlight.map((value) =>
+            h.code([h.Key(value), h.Class(cx(styles.walkthroughHighlight))], [value])))])
+      ]),
+      ...(step.notes.length === 0 ? [] : [h.ul([h.Class(cx(styles.walkthroughNotes))], step.notes.map((note) =>
+        h.li([], [note])))]),
+      ...(step.children.length === 0 ? [] : [walkthroughStepsView(step.children, h, number)])
+    ])
+  ])
+}))
+
+const walkthroughView = (model: Model, h: HtmlBuilder<Message>): Html => {
+  if (model.error !== null) return h.div([h.Class(cx(styles.error)), h.Role("alert")], [model.error])
+  if (model.walkthrough === null) return h.div([h.Class(cx(styles.welcome))], [
+    h.span([h.Class(cx(styles.welcomeKicker))], ["Guided code tour"]),
+    h.h2([h.Class(cx(styles.welcomeTitle))], [model.isLoadingWalkthrough ? "Loading walkthrough…" : "No walkthrough selected."])
+  ])
+  const walkthrough = model.walkthrough
+  return h.article([h.Class(cx(styles.walkthrough))], [
+    h.header([h.Class(cx(styles.walkthroughHeader))], [
+      h.span([h.Class(cx(styles.welcomeKicker))], ["Code walkthrough"]),
+      h.h1([h.Class(cx(styles.walkthroughTitle))], [walkthrough.title]),
+      h.p([h.Class(cx(styles.walkthroughSummary))], [walkthrough.summary]),
+      ...(walkthrough.audience.length === 0 ? [] : [h.div([h.Class(cx(styles.walkthroughAudience))], [
+        "For ", walkthrough.audience.join(" · ")
+      ])])
+    ]),
+    walkthroughStepsView(walkthrough.steps, h)
+  ])
+}
+
 const refreshButton = (model: Model, h: HtmlBuilder<Message>): Html => Button.view({
   label: model.isLoadingTree ? "Reading…" : "Refresh map",
   isDisabled: model.isLoadingTree,
@@ -475,7 +585,9 @@ const themeButton = (model: Model, h: HtmlBuilder<Message>): Html => Button.view
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
   const changed = model.tree?.files.filter((file) => file.gitStatus !== null).length ?? 0
   return {
-    title: model.selectedPath === null ? "module-ls" : `${model.selectedPath} · module-ls`,
+    title: model.walkthrough !== null
+      ? `${model.walkthrough.title} · module-ls`
+      : model.selectedPath === null ? "module-ls" : `${model.selectedPath} · module-ls`,
     lang: "en",
     body: h.div([h.Class(cx(styles.app))], [
       h.header([h.Class(cx(styles.topbar))], [
@@ -490,14 +602,20 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
           h.span([h.Class(cx(styles.meta))], [
             `${model.tree?.files.length ?? 0} files · ${changed} changed`
           ]),
+          h.a([
+            h.Href(walkthroughRouter({ path: "examples/annotated-source.walkthrough.yaml" })),
+            h.Class(cx(styles.navLink))
+          ], ["Walkthrough"]),
           themeButton(model, h),
           refreshButton(model, h)
         ])
       ]),
-      h.div([h.Class(cx(styles.layout))], [
-        sidebarView(model, h),
-        h.main([h.Class(cx(styles.main))], [sourceView(model, h)])
-      ])
+      model.route._tag === "Walkthrough"
+        ? h.main([h.Class(cx(styles.walkthroughMain))], [walkthroughView(model, h)])
+        : h.div([h.Class(cx(styles.layout))], [
+          sidebarView(model, h),
+          h.main([h.Class(cx(styles.main))], [sourceView(model, h)])
+        ])
     ])
   }
 }

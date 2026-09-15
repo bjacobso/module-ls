@@ -142,6 +142,45 @@ export const AnnotatedSource = S.Struct({
 })
 export type AnnotatedSource = typeof AnnotatedSource.Type
 
+export const WalkthroughTarget = S.Struct({
+  path: S.String,
+  symbol: S.optionalKey(S.String),
+  line: S.optionalKey(S.Number),
+  endLine: S.optionalKey(S.Number),
+  highlight: S.optionalKey(S.Array(S.String))
+})
+export type WalkthroughTarget = typeof WalkthroughTarget.Type
+
+export interface WalkthroughStepType {
+  readonly id: string
+  readonly kind: "orientation" | "code" | "checkpoint" | "detour"
+  readonly title: string
+  readonly body: string
+  readonly target?: WalkthroughTarget
+  readonly notes: ReadonlyArray<string>
+  readonly children: ReadonlyArray<WalkthroughStepType>
+}
+
+export const WalkthroughStep: S.Codec<WalkthroughStepType> = S.Struct({
+  id: S.String,
+  kind: S.Literals(["orientation", "code", "checkpoint", "detour"]),
+  title: S.String,
+  body: S.String,
+  target: S.optionalKey(WalkthroughTarget),
+  notes: S.Array(S.String),
+  children: S.Array(S.suspend((): S.Codec<WalkthroughStepType> => WalkthroughStep))
+})
+
+export const WalkthroughDocument = S.Struct({
+  schemaVersion: S.Literal(1),
+  id: S.String,
+  title: S.String,
+  summary: S.String,
+  audience: S.Array(S.String),
+  steps: S.Array(WalkthroughStep)
+})
+export type WalkthroughDocument = typeof WalkthroughDocument.Type
+
 const fetchJson = <A, I, R>(url: string, schema: S.Codec<A, I, R>) =>
   Effect.tryPromise({
     try: async () => {
@@ -173,4 +212,9 @@ export const fetchAnnotated = (path: string, symbol: string | null) => {
   const params = new URLSearchParams({ path })
   if (symbol !== null) params.set("symbol", symbol)
   return fetchJson(`/api/annotated?${params}`, AnnotatedSource)
+}
+
+export const fetchWalkthrough = (path: string) => {
+  const params = new URLSearchParams({ path })
+  return fetchJson(`/api/walkthrough?${params}`, WalkthroughDocument)
 }

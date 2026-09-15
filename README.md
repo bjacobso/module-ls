@@ -136,6 +136,40 @@ mls annotate src/analyzer.ts#analyze --root . > analyze.json
 mls annotate src/analyzer.ts --root . --no-types
 ```
 
+### Author a guided walkthrough
+
+Walkthroughs are ordered, nestable explanations with optional code targets.
+Agents can author the schema-v1 wire format as JSON or YAML and render it as a
+terminal tree, normalized JSON, or an interactive web page:
+
+```sh
+mls walkthrough examples/annotated-source.walkthrough.yaml
+mls walkthrough examples/annotated-source.walkthrough.json --format json
+# with `mls serve .` running:
+# http://127.0.0.1:4310/walkthrough/examples/annotated-source.walkthrough.yaml
+```
+
+Library authors can build the same schema with an immutable, Effect-style DSL:
+
+```ts
+import { Walkthrough } from "module-ls"
+
+export const tour = Walkthrough
+  .make("request-path", {
+    title: "Follow one request",
+    summary: "Move from the HTTP edge to annotated source."
+  })
+  .add(Walkthrough.step("serve", {
+    title: "Enter through the server",
+    body: "The handler resolves and validates repository-relative paths.",
+    target: Walkthrough.target("src/server.ts", { symbol: "serveExplorer" })
+  }))
+```
+
+See the complete [YAML](examples/annotated-source.walkthrough.yaml),
+[JSON](examples/annotated-source.walkthrough.json), and
+[TypeScript DSL](examples/annotated-source.walkthrough.ts) examples.
+
 For UI development, run the API and Vite separately:
 
 ```sh
@@ -165,6 +199,7 @@ GET /api/source?path=src/analyzer.ts
 GET /api/source?path=src/analyzer.ts&symbol=analyze
 GET /api/annotated?path=src/analyzer.ts&symbol=analyze
 GET /api/search?q=analyze
+GET /api/walkthrough?path=examples/annotated-source.walkthrough.yaml
 ```
 
 `AnnotatedSourceSchema` contains offset-based highlighted tokens, quick-info

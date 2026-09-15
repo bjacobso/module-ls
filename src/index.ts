@@ -66,3 +66,24 @@ export { explorerSnapshot } from "./explorer.js"
 export { highlightSource } from "./highlight.js"
 export { searchSnapshot } from "./search.js"
 export { parseTarget, renderSelectedJson, renderSelectedSource, selectSource } from "./selection.js"
+export {
+  Walkthrough,
+  WalkthroughDefinition,
+  WalkthroughDocumentSchema,
+  WalkthroughError,
+  WalkthroughStepKindSchema,
+  WalkthroughStepSchema,
+  WalkthroughTargetSchema,
+  loadWalkthrough,
+  parseWalkthrough,
+  renderWalkthroughJson,
+  renderWalkthroughTree,
+  type StepConfig,
+  type TargetConfig,
+  type WalkthroughConfig,
+  type WalkthroughDocument,
+  type WalkthroughFormat,
+  type WalkthroughStep,
+  type WalkthroughStepKind,
+  type WalkthroughTarget
+} from "./walkthrough.js"
