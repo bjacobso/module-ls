@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process"
+
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Effect, Option, Terminal } from "effect"
+import { Effect, Option, Schema, Terminal } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 
 import { run } from "./app.js"
+import { AnnotatedSourceSchema } from "./model.js"
 import { renderSelectedJson, renderSelectedSource, selectSource } from "./selection.js"
 import { serveExplorer } from "./server.js"
 
@@ -125,13 +128,54 @@ const servePort = Flag.integer("port").pipe(
   Flag.withDescription("Loopback port for the local explorer")
 )
 
-const serveCommand = Command.make("serve", { serveRoot, servePort }, ({ serveRoot, servePort }) =>
-  serveExplorer(serveRoot, servePort)).pipe(
+const noTypes = Flag.boolean("no-types").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription("Skip TypeScript hover and definition analysis")
+)
+
+const open = Flag.boolean("open").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription("Open the explorer in the default browser")
+)
+
+const serveCommand = Command.make("serve", { serveRoot, servePort, noTypes, open }, ({ serveRoot, servePort, noTypes, open }) =>
+  Effect.gen(function*() {
+    if (open) {
+      const url = `http://127.0.0.1:${servePort}`
+      yield* Effect.sync(() => {
+        const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open"
+        const args = process.platform === "win32" ? ["/c", "start", "", url] : [url]
+        const child = spawn(command, args, { detached: true, stdio: "ignore" })
+        child.unref()
+      })
+    }
+    return yield* serveExplorer(serveRoot, servePort, { types: !noTypes })
+  })).pipe(
     Command.withDescription("Start the local FoldKit code explorer")
   )
 
+const annotateRoot = Flag.string("root").pipe(
+  Flag.optional,
+  Flag.withDescription("Repository root used to resolve tsconfig and definition paths")
+)
+
+const annotateCommand = Command.make(
+  "annotate",
+  { target, selectedSymbol, annotateRoot, noTypes },
+  ({ target, selectedSymbol, annotateRoot, noTypes }) => Effect.gen(function*() {
+    const terminal = yield* Terminal.Terminal
+    const { annotateSource } = yield* Effect.promise(() => import("./annotation.js"))
+    const selected = yield* annotateSource(target, Option.getOrNull(selectedSymbol), {
+      ...(Option.isSome(annotateRoot) ? { root: annotateRoot.value } : {}),
+      types: !noTypes
+    })
+    const encoded = yield* Schema.encodeEffect(AnnotatedSourceSchema)(selected)
+    yield* terminal.display(`${JSON.stringify(encoded, null, 2)}\n`)
+  })
+).pipe(Command.withDescription("Emit highlighted source with type hover and definition annotations"))
+
 export const command = inspectCommand.pipe(
-  Command.withSubcommands([showCommand, extractCommand, serveCommand])
+  Command.withSubcommands([showCommand, extractCommand, annotateCommand, serveCommand])
 )
 
 const cli = Command.run(command, {

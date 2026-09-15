@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./viewer": {
+      "types": "./dist/viewer.d.ts",
+      "import": "./dist/viewer.js"
     }
   },
   "files": [
@@ -30,7 +34,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && pnpm --dir web typecheck"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24.13"
   },
   "packageManager": "pnpm@10.20.0",
   "license": "UNLICENSED",
@@ -38,12 +42,13 @@
     "@effect/platform-node": "4.0.0-rc.112",
     "effect": "4.0.0-rc.112",
     "ignore": "^7.0.6",
-    "ts-morph": "^28.0.0"
+    "shiki": "4.4.3",
+    "ts-morph": "^28.0.0",
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   }
 }

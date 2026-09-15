@@ -6,6 +6,7 @@ import { InspectError } from "./errors.js"
 import type {
   Declaration,
   ExplorerDeclaration,
+  ExplorerDirectory,
   ExplorerFile,
   ExplorerSnapshot,
   InspectOptions,
@@ -61,6 +62,52 @@ const collectFiles = (node: TreeNode): ReadonlyArray<ExplorerFile> => {
   }
 }
 
+interface MutableDirectory {
+  type: "directory"
+  name: string
+  path: string
+  children: Array<MutableDirectory | { type: "file", file: ExplorerFile }>
+}
+
+const directoryTree = (root: string, files: ReadonlyArray<ExplorerFile>): ExplorerDirectory => {
+  const tree: MutableDirectory = {
+    type: "directory",
+    name: root.split(/[\\/]/u).at(-1) || root,
+    path: "",
+    children: []
+  }
+  for (const file of files) {
+    const parts = file.path.split("/")
+    let directory = tree
+    for (const part of parts.slice(0, -1)) {
+      let child = directory.children.find((candidate): candidate is MutableDirectory =>
+        candidate.type === "directory" && candidate.name === part)
+      if (child === undefined) {
+        child = {
+          type: "directory",
+          name: part,
+          path: directory.path === "" ? part : `${directory.path}/${part}`,
+          children: []
+        }
+        directory.children.push(child)
+      }
+      directory = child
+    }
+    directory.children.push({ type: "file", file })
+  }
+  const sort = (directory: MutableDirectory): void => {
+    directory.children.sort((left, right) => {
+      if (left.type !== right.type) return left.type === "directory" ? -1 : 1
+      const leftName = left.type === "directory" ? left.name : left.file.name
+      const rightName = right.type === "directory" ? right.name : right.file.name
+      return leftName.localeCompare(rightName)
+    })
+    for (const child of directory.children) if (child.type === "directory") sort(child)
+  }
+  sort(tree)
+  return tree
+}
+
 const gitStatuses = (
   root: string
 ): Effect.Effect<ReadonlyMap<string, string>, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -108,6 +155,7 @@ export const explorerSnapshot = (
     return {
       schemaVersion: 1,
       root: absoluteRoot,
+      tree: directoryTree(absoluteRoot, files),
       files,
       diagnostics: output.diagnostics
     }

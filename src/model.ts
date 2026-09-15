@@ -176,14 +176,109 @@ export const ExplorerFileSchema = Schema.Struct({
 
 export interface ExplorerFile extends Schema.Schema.Type<typeof ExplorerFileSchema> {}
 
+export interface ExplorerDirectory {
+  readonly type: "directory"
+  readonly name: string
+  readonly path: string
+  readonly children: ReadonlyArray<ExplorerDirectory | ExplorerFileNode>
+}
+
+export interface ExplorerFileNode {
+  readonly type: "file"
+  readonly file: ExplorerFile
+}
+
+export const ExplorerFileNodeSchema: Schema.Codec<ExplorerFileNode> = Schema.Struct({
+  type: Schema.Literal("file"),
+  file: ExplorerFileSchema
+})
+
+export const ExplorerDirectorySchema: Schema.Codec<ExplorerDirectory> = Schema.Struct({
+  type: Schema.Literal("directory"),
+  name: Schema.String,
+  path: Schema.String,
+  children: Schema.Array(Schema.Union([
+    Schema.suspend((): Schema.Codec<ExplorerDirectory> => ExplorerDirectorySchema),
+    ExplorerFileNodeSchema
+  ]))
+})
+
 export const ExplorerSnapshotSchema = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   root: Schema.String,
+  tree: ExplorerDirectorySchema,
   files: Schema.Array(ExplorerFileSchema),
   diagnostics: Schema.Array(DiagnosticSchema)
 })
 
 export interface ExplorerSnapshot extends Schema.Schema.Type<typeof ExplorerSnapshotSchema> {}
+
+export const HighlightedTokenSchema = Schema.Struct({
+  content: Schema.String,
+  start: Schema.Number,
+  end: Schema.Number,
+  color: Schema.NullOr(Schema.String),
+  darkColor: Schema.NullOr(Schema.String),
+  fontStyle: Schema.NullOr(Schema.Number)
+})
+
+export interface HighlightedToken extends Schema.Schema.Type<typeof HighlightedTokenSchema> {}
+
+export const HoverAnnotationSchema = Schema.Struct({
+  start: Schema.Number,
+  end: Schema.Number,
+  text: Schema.String,
+  documentation: Schema.NullOr(Schema.String)
+})
+
+export interface HoverAnnotation extends Schema.Schema.Type<typeof HoverAnnotationSchema> {}
+
+export const DefinitionTargetSchema = Schema.Struct({
+  path: Schema.String,
+  range: SourceRangeSchema
+})
+
+export const DefinitionAnnotationSchema = Schema.Struct({
+  start: Schema.Number,
+  end: Schema.Number,
+  targets: Schema.Array(DefinitionTargetSchema)
+})
+
+export interface DefinitionAnnotation extends Schema.Schema.Type<typeof DefinitionAnnotationSchema> {}
+
+export const AnnotatedSourceSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(3),
+  path: Schema.String,
+  language: Schema.NullOr(Schema.Literals(["typescript", "javascript"])),
+  qualifiedName: Schema.NullOr(Schema.String),
+  kind: Schema.NullOr(DeclarationKindSchema),
+  range: SourceRangeSchema,
+  contentHash: Schema.String,
+  source: Schema.String,
+  lines: Schema.Array(Schema.Array(HighlightedTokenSchema)),
+  hovers: Schema.Array(HoverAnnotationSchema),
+  definitions: Schema.Array(DefinitionAnnotationSchema)
+})
+
+export interface AnnotatedSource extends Schema.Schema.Type<typeof AnnotatedSourceSchema> {}
+
+export const SearchResultSchema = Schema.Struct({
+  type: Schema.Literals(["file", "symbol"]),
+  path: Schema.String,
+  label: Schema.String,
+  detail: Schema.NullOr(Schema.String),
+  symbol: Schema.NullOr(Schema.String),
+  range: Schema.NullOr(SourceRangeSchema),
+  score: Schema.Number
+})
+
+export interface SearchResult extends Schema.Schema.Type<typeof SearchResultSchema> {}
+
+export const SearchResponseSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  query: Schema.String,
+  results: Schema.Array(SearchResultSchema)
+})
 
 export const SymbolsSchema = Schema.Literals(["modules", "public", "all"])
 export type Symbols = typeof SymbolsSchema.Type

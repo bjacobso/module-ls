@@ -1,6 +1,8 @@
 import { Runtime } from "foldkit"
 
 import "./reset.css"
+import "@foldworks/ui/theme.css"
+import "@foldworks/ui/themes/neutral.css"
 import { Message, Model, init, update, view } from "./main.js"
 
 if (import.meta.env.DEV) void import("virtual:stylex:runtime")

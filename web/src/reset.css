@@ -3,3 +3,11 @@ html, body, #root { height: 100%; margin: 0; }
 button, input { font: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #6e4bec; outline-offset: 2px; }
 ::selection { background: #d8ccff; color: #24211d; }
+
+.type-hover { display: inline; position: relative; }
+.type-card { display: none; left: 0; position: absolute; top: calc(100% + 6px); width: max-content; z-index: 20; }
+.type-hover:hover > .type-card,
+.type-hover:focus > .type-card,
+.type-hover:focus-within > .type-card { display: block; }
+.code-line-anchor:target,
+.code-line-focused { background: color-mix(in srgb, #6e4bec 18%, transparent); }
