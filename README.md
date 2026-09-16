@@ -6,7 +6,7 @@ It combines the filesystem, exported modules, opening documentation, exact
 source ranges, and Git working-tree state into a compact CLI and a local code
 explorer. It is designed as roaming documentation for humans and coding agents.
 
-![module-ls exploring a TypeScript source directory](./assets/module-ls-tui.svg)
+![module-ls web explorer showing a TypeScript type on hover](./assets/module-ls-web.png)
 
 ```text
 $ mls src --peek --color never
@@ -28,7 +28,7 @@ The project is a functional prototype and is not published to npm.
 
 ## Try it
 
-Node.js 20 or newer and pnpm are required.
+Node.js 24.13 or newer and pnpm are required.
 
 ```sh
 pnpm install
@@ -113,13 +113,62 @@ mls serve .
 
 Use `--port <n>` to choose another loopback port. The explorer offers:
 
-- a searchable file and qualified-symbol map;
+- a searchable directory tree with qualified-symbol children;
 - file and declaration documentation;
-- precise line-numbered source blocks;
+- Shiki-highlighted, line-numbered source blocks;
+- TypeScript quick info on hover and in-repository go-to-definition links;
 - Git status badges and a changed-file count;
 - typed, bidirectional file routes;
 - refresh without restarting the service; and
 - FoldKit DevTools during Vite development.
+
+Use `--no-types` for syntax highlighting without starting a TypeScript language
+service, or `--open` to launch the explorer in the default browser.
+
+### Precompute an annotated snippet
+
+`annotate` emits the same schema-v3 payload consumed by the web viewer. This is
+useful for docs and other static sites: Shiki tokens and TypeScript information
+are computed at build time, so TypeScript is not shipped to the browser.
+
+```sh
+mls annotate src/analyzer.ts#analyze --root . > analyze.json
+mls annotate src/analyzer.ts --root . --no-types
+```
+
+### Author a guided walkthrough
+
+Walkthroughs are ordered, nestable explanations with optional code targets.
+Agents can author the schema-v1 wire format as JSON or YAML and render it as a
+terminal tree, normalized JSON, or an interactive web page:
+
+```sh
+mls walkthrough examples/annotated-source.walkthrough.yaml
+mls walkthrough examples/annotated-source.walkthrough.json --format json
+# with `mls serve .` running:
+# http://127.0.0.1:4310/walkthrough/examples/annotated-source.walkthrough.yaml
+```
+
+Library authors can build the same schema with an immutable, Effect-style DSL:
+
+```ts
+import { Walkthrough } from "module-ls"
+
+export const tour = Walkthrough
+  .make("request-path", {
+    title: "Follow one request",
+    summary: "Move from the HTTP edge to annotated source."
+  })
+  .add(Walkthrough.step("serve", {
+    title: "Enter through the server",
+    body: "The handler resolves and validates repository-relative paths.",
+    target: Walkthrough.target("src/server.ts", { symbol: "serveExplorer" })
+  }))
+```
+
+See the complete [YAML](examples/annotated-source.walkthrough.yaml),
+[JSON](examples/annotated-source.walkthrough.json), and
+[TypeScript DSL](examples/annotated-source.walkthrough.ts) examples.
 
 For UI development, run the API and Vite separately:
 
@@ -148,10 +197,15 @@ The explorer also serves read-only JSON endpoints:
 GET /api/tree
 GET /api/source?path=src/analyzer.ts
 GET /api/source?path=src/analyzer.ts&symbol=analyze
+GET /api/annotated?path=src/analyzer.ts&symbol=analyze
+GET /api/search?q=analyze
+GET /api/walkthrough?path=examples/annotated-source.walkthrough.yaml
 ```
 
-`ModuleLsOutputSchema`, `SelectedSourceSchema`, `ExplorerSnapshotSchema`, and
-the inspection/selection functions are exported for programmatic use.
+`AnnotatedSourceSchema` contains offset-based highlighted tokens, quick-info
+hovers, and definition targets. Its browser-safe contract is also exported from
+`module-ls/viewer`. The inspection, selection, annotation, and search functions
+are exported for programmatic use.
 
 ## What it understands
 
@@ -160,9 +214,10 @@ and `.cjs`. ts-morph recognizes exported functions, variables, classes,
 interfaces, types, enums, namespaces, ambient modules, default exports,
 re-exports, declaration files, and common CommonJS assignments.
 
-The analyzer is intentionally shallow. It does not evaluate project code,
-require a valid build, list class members, infer call graphs, or perform
-cross-file type analysis.
+The repository index remains intentionally shallow. The annotation path adds a
+lazy, tsconfig-aware TypeScript language service for hover and definitions; it
+does not evaluate project code, require a valid build, list class members, or
+infer call graphs.
 
 ## Architecture
 
@@ -175,7 +230,7 @@ The web workspace is a native FoldKit application—not a React compatibility
 layer. Its state is one Effect Schema `Model`; events are an
 exhaustive Message union; network and navigation work are named Commands; the
 view is FoldKit virtual DOM; routing uses FoldKit parsers; accessible controls
-come from `@foldkit/ui`; Vite handles bundling and HMR; and StyleX compiles the
+and theme tokens come from `@foldworks/ui`; Vite handles bundling and HMR; and StyleX compiles the
 visual system to static CSS. The CLI and web workspace are pinned to the same
 Effect release, while schema-validated HTTP JSON remains their runtime boundary.
 

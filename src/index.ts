@@ -1,9 +1,13 @@
 export { analyze, contentFingerprint, extractLeadingDocumentation } from "./analyzer.js"
+export { annotateSource, type AnnotationOptions } from "./annotation.js"
 export { inspect, run } from "./app.js"
 export { discover } from "./discovery.js"
 export { InspectError, RenderError, type ModuleLsError } from "./errors.js"
 export {
   ColorModeSchema,
+  AnnotatedSourceSchema,
+  DefinitionAnnotationSchema,
+  DefinitionTargetSchema,
   DeclarationKindSchema,
   DeclarationSchema,
   DiagnosticSchema,
@@ -11,19 +15,27 @@ export {
   FileNodeSchema,
   InspectOptionsSchema,
   ExplorerDeclarationSchema,
+  ExplorerDirectorySchema,
   ExplorerFileSchema,
+  ExplorerFileNodeSchema,
   ExplorerSnapshotSchema,
   ModuleLsOutputSchema,
+  HighlightedTokenSchema,
+  HoverAnnotationSchema,
   OutputFormatSchema,
   SourceLocationSchema,
   SourcePositionSchema,
   SourceRangeSchema,
   SelectedSourceSchema,
+  SearchResponseSchema,
+  SearchResultSchema,
   SymbolsSchema,
   SymlinkNodeSchema,
   TreeNodeSchema,
   VisibilitySchema,
   type ColorMode,
+  type AnnotatedSource,
+  type DefinitionAnnotation,
   type Declaration,
   type DeclarationKind,
   type Diagnostic,
@@ -31,14 +43,19 @@ export {
   type FileNode,
   type InspectOptions,
   type ExplorerDeclaration,
+  type ExplorerDirectory,
   type ExplorerFile,
+  type ExplorerFileNode,
   type ExplorerSnapshot,
   type ModuleLsOutput,
+  type HighlightedToken,
+  type HoverAnnotation,
   type OutputFormat,
   type SourceLocation,
   type SourcePosition,
   type SourceRange,
   type SelectedSource,
+  type SearchResult,
   type Symbols,
   type SymlinkNode,
   type TreeNode,
@@ -46,4 +63,27 @@ export {
 } from "./model.js"
 export { renderJson, renderTree } from "./render.js"
 export { explorerSnapshot } from "./explorer.js"
+export { highlightSource } from "./highlight.js"
+export { searchSnapshot } from "./search.js"
 export { parseTarget, renderSelectedJson, renderSelectedSource, selectSource } from "./selection.js"
+export {
+  Walkthrough,
+  WalkthroughDefinition,
+  WalkthroughDocumentSchema,
+  WalkthroughError,
+  WalkthroughStepKindSchema,
+  WalkthroughStepSchema,
+  WalkthroughTargetSchema,
+  loadWalkthrough,
+  parseWalkthrough,
+  renderWalkthroughJson,
+  renderWalkthroughTree,
+  type StepConfig,
+  type TargetConfig,
+  type WalkthroughConfig,
+  type WalkthroughDocument,
+  type WalkthroughFormat,
+  type WalkthroughStep,
+  type WalkthroughStepKind,
+  type WalkthroughTarget
+} from "./walkthrough.js"

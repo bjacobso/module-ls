@@ -43,6 +43,33 @@ export const ExplorerFile = S.Struct({
 })
 export type ExplorerFile = typeof ExplorerFile.Type
 
+export interface ExplorerDirectoryType {
+  readonly type: "directory"
+  readonly name: string
+  readonly path: string
+  readonly children: ReadonlyArray<ExplorerDirectoryType | ExplorerFileNodeType>
+}
+
+export interface ExplorerFileNodeType {
+  readonly type: "file"
+  readonly file: ExplorerFile
+}
+
+const ExplorerFileNode: S.Codec<ExplorerFileNodeType> = S.Struct({
+  type: S.Literal("file"),
+  file: ExplorerFile
+})
+
+export const ExplorerDirectory: S.Codec<ExplorerDirectoryType> = S.Struct({
+  type: S.Literal("directory"),
+  name: S.String,
+  path: S.String,
+  children: S.Array(S.Union([
+    S.suspend((): S.Codec<ExplorerDirectoryType> => ExplorerDirectory),
+    ExplorerFileNode
+  ]))
+})
+
 const Diagnostic = S.Struct({
   severity: S.Literals(["warning", "error"]),
   code: S.String,
@@ -54,6 +81,7 @@ const Diagnostic = S.Struct({
 export const ExplorerSnapshot = S.Struct({
   schemaVersion: S.Literal(1),
   root: S.String,
+  tree: ExplorerDirectory,
   files: S.Array(ExplorerFile),
   diagnostics: S.Array(Diagnostic)
 })
@@ -70,6 +98,88 @@ export const SelectedSource = S.Struct({
   source: S.String
 })
 export type SelectedSource = typeof SelectedSource.Type
+
+export const HighlightedToken = S.Struct({
+  content: S.String,
+  start: S.Number,
+  end: S.Number,
+  color: S.NullOr(S.String),
+  darkColor: S.NullOr(S.String),
+  fontStyle: S.NullOr(S.Number)
+})
+export type HighlightedToken = typeof HighlightedToken.Type
+
+export const HoverAnnotation = S.Struct({
+  start: S.Number,
+  end: S.Number,
+  text: S.String,
+  documentation: S.NullOr(S.String)
+})
+export type HoverAnnotation = typeof HoverAnnotation.Type
+
+export const DefinitionTarget = S.Struct({ path: S.String, range: SourceRange })
+export type DefinitionTarget = typeof DefinitionTarget.Type
+
+export const DefinitionAnnotation = S.Struct({
+  start: S.Number,
+  end: S.Number,
+  targets: S.Array(DefinitionTarget)
+})
+export type DefinitionAnnotation = typeof DefinitionAnnotation.Type
+
+export const AnnotatedSource = S.Struct({
+  schemaVersion: S.Literal(3),
+  path: S.String,
+  language: S.NullOr(S.Literals(["typescript", "javascript"])),
+  qualifiedName: S.NullOr(S.String),
+  kind: S.NullOr(DeclarationKind),
+  range: SourceRange,
+  contentHash: S.String,
+  source: S.String,
+  lines: S.Array(S.Array(HighlightedToken)),
+  hovers: S.Array(HoverAnnotation),
+  definitions: S.Array(DefinitionAnnotation)
+})
+export type AnnotatedSource = typeof AnnotatedSource.Type
+
+export const WalkthroughTarget = S.Struct({
+  path: S.String,
+  symbol: S.optionalKey(S.String),
+  line: S.optionalKey(S.Number),
+  endLine: S.optionalKey(S.Number),
+  highlight: S.optionalKey(S.Array(S.String))
+})
+export type WalkthroughTarget = typeof WalkthroughTarget.Type
+
+export interface WalkthroughStepType {
+  readonly id: string
+  readonly kind: "orientation" | "code" | "checkpoint" | "detour"
+  readonly title: string
+  readonly body: string
+  readonly target?: WalkthroughTarget
+  readonly notes: ReadonlyArray<string>
+  readonly children: ReadonlyArray<WalkthroughStepType>
+}
+
+export const WalkthroughStep: S.Codec<WalkthroughStepType> = S.Struct({
+  id: S.String,
+  kind: S.Literals(["orientation", "code", "checkpoint", "detour"]),
+  title: S.String,
+  body: S.String,
+  target: S.optionalKey(WalkthroughTarget),
+  notes: S.Array(S.String),
+  children: S.Array(S.suspend((): S.Codec<WalkthroughStepType> => WalkthroughStep))
+})
+
+export const WalkthroughDocument = S.Struct({
+  schemaVersion: S.Literal(1),
+  id: S.String,
+  title: S.String,
+  summary: S.String,
+  audience: S.Array(S.String),
+  steps: S.Array(WalkthroughStep)
+})
+export type WalkthroughDocument = typeof WalkthroughDocument.Type
 
 const fetchJson = <A, I, R>(url: string, schema: S.Codec<A, I, R>) =>
   Effect.tryPromise({
@@ -96,4 +206,15 @@ export const fetchSource = (path: string, symbol: string | null) => {
   const params = new URLSearchParams({ path })
   if (symbol !== null) params.set("symbol", symbol)
   return fetchJson(`/api/source?${params}`, SelectedSource)
+}
+
+export const fetchAnnotated = (path: string, symbol: string | null) => {
+  const params = new URLSearchParams({ path })
+  if (symbol !== null) params.set("symbol", symbol)
+  return fetchJson(`/api/annotated?${params}`, AnnotatedSource)
+}
+
+export const fetchWalkthrough = (path: string) => {
+  const params = new URLSearchParams({ path })
+  return fetchJson(`/api/walkthrough?${params}`, WalkthroughDocument)
 }

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "annotated-source-pipeline-json",
+  "title": "From repository source to an annotated code view",
+  "summary": "A compact JSON-authored version of the annotated-source walkthrough.",
+  "audience": ["coding agents"],
+  "steps": [
+    {
+      "id": "contract",
+      "kind": "orientation",
+      "title": "Start with the wire contract",
+      "body": "Every renderer consumes the same versioned AnnotatedSource value.",
+      "target": {
+        "path": "src/model.ts",
+        "symbol": "AnnotatedSourceSchema",
+        "highlight": ["lines", "hovers", "definitions"]
+      },
+      "notes": ["Offsets are relative to the selected source block."],
+      "children": []
+    },
+    {
+      "id": "annotate",
+      "kind": "code",
+      "title": "Combine syntax and semantics",
+      "body": "annotateSource joins exact selection, Shiki tokens, and TypeScript information.",
+      "target": {
+        "path": "src/annotation.ts",
+        "symbol": "annotateSource"
+      },
+      "notes": [],
+      "children": []
+    }
+  ]
+}

@@ -10,8 +10,15 @@ import {
 
 import { InspectError } from "./errors.js"
 import { explorerSnapshot } from "./explorer.js"
-import { ExplorerSnapshotSchema, SelectedSourceSchema } from "./model.js"
+import {
+  AnnotatedSourceSchema,
+  ExplorerSnapshotSchema,
+  SearchResponseSchema,
+  SelectedSourceSchema
+} from "./model.js"
+import { searchSnapshot } from "./search.js"
 import { selectSource } from "./selection.js"
+import { WalkthroughDocumentSchema, loadWalkthrough } from "./walkthrough.js"
 
 const errorResponse = (cause: unknown, status = 500): HttpServerResponse.HttpServerResponse =>
   HttpServerResponse.jsonUnsafe({
@@ -35,7 +42,8 @@ const containedPath = (
 
 export const serveExplorer = (
   requestedRoot: string,
-  port: number
+  port: number,
+  options: { readonly types?: boolean } = {}
 ) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -82,7 +90,59 @@ export const serveExplorer = (
       const path = containedPath(pathService, root, requested)
       if (path === null) return errorResponse("Path is outside the explorer root", 403)
       const selected = yield* selectSource(path, url.searchParams.get("symbol"))
-      return noStore(yield* HttpServerResponse.schemaJson(SelectedSourceSchema)(selected))
+      return noStore(yield* HttpServerResponse.schemaJson(SelectedSourceSchema)({
+        ...selected,
+        path: requested.replaceAll("\\", "/")
+      }))
+    }).pipe(Effect.match({
+      onFailure: (cause) => errorResponse(cause, 404),
+      onSuccess: (response) => response
+    }))
+
+    const annotatedHandler = Effect.gen(function*() {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const url = new URL(request.url, "http://127.0.0.1")
+      const requested = url.searchParams.get("path")
+      if (requested === null) return errorResponse("Missing path query parameter", 400)
+      const path = containedPath(pathService, root, requested)
+      if (path === null) return errorResponse("Path is outside the explorer root", 403)
+      const { annotateSource } = yield* Effect.promise(() => import("./annotation.js"))
+      const selected = yield* annotateSource(path, url.searchParams.get("symbol"), {
+        root,
+        types: options.types !== false,
+        displayPath: requested.replaceAll("\\", "/")
+      })
+      return noStore(yield* HttpServerResponse.schemaJson(AnnotatedSourceSchema)(selected))
+    }).pipe(Effect.match({
+      onFailure: (cause) => errorResponse(cause, 404),
+      onSuccess: (response) => response
+    }))
+
+    const searchHandler = Effect.gen(function*() {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const url = new URL(request.url, "http://127.0.0.1")
+      const query = url.searchParams.get("q") ?? ""
+      const snapshot = yield* explorerSnapshot(root)
+      return noStore(yield* HttpServerResponse.schemaJson(SearchResponseSchema)({
+        schemaVersion: 1,
+        query,
+        results: searchSnapshot(snapshot, query)
+      }))
+    }).pipe(Effect.match({
+      onFailure: (cause) => errorResponse(cause),
+      onSuccess: (response) => response
+    }))
+
+    const walkthroughHandler = Effect.gen(function*() {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const url = new URL(request.url, "http://127.0.0.1")
+      const requested = url.searchParams.get("path")
+      if (requested === null) return errorResponse("Missing path query parameter", 400)
+      const path = containedPath(pathService, root, requested)
+      if (path === null) return errorResponse("Path is outside the explorer root", 403)
+      if (!/\.(?:json|ya?ml)$/iu.test(path)) return errorResponse("Walkthrough must be JSON or YAML", 400)
+      const walkthrough = yield* loadWalkthrough(path)
+      return noStore(yield* HttpServerResponse.schemaJson(WalkthroughDocumentSchema)(walkthrough))
     }).pipe(Effect.match({
       onFailure: (cause) => errorResponse(cause, 404),
       onSuccess: (response) => response
@@ -113,6 +173,9 @@ export const serveExplorer = (
       const pathname = new URL(request.url, "http://127.0.0.1").pathname
       if (pathname === "/api/tree") return yield* treeHandler
       if (pathname === "/api/source") return yield* sourceHandler
+      if (pathname === "/api/annotated") return yield* annotatedHandler
+      if (pathname === "/api/search") return yield* searchHandler
+      if (pathname === "/api/walkthrough") return yield* walkthroughHandler
       return yield* staticHandler
     })
     const server = HttpServer.serve(application).pipe(

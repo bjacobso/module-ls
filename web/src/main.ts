@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex"
 import type { StyleXStyles } from "@stylexjs/stylex"
-import { Button, Input } from "@foldkit/ui"
-import { Effect, Schema as S } from "effect"
+import { Button, Input } from "@foldworks/ui"
+import { Effect, Option, Schema as S } from "effect"
 import { Command, Navigation, Runtime, Update } from "foldkit"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -10,14 +10,21 @@ import type { Url } from "foldkit/url"
 import { toString as urlToString } from "foldkit/url"
 
 import {
+  AnnotatedSource,
   ExplorerSnapshot,
-  SelectedSource,
-  fetchSource,
+  WalkthroughDocument,
+  fetchAnnotated,
   fetchTree,
+  fetchWalkthrough,
+  type DefinitionAnnotation,
+  type ExplorerDirectoryType,
   type ExplorerDeclaration,
-  type ExplorerFile
+  type ExplorerFile,
+  type HighlightedToken,
+  type HoverAnnotation,
+  type WalkthroughStepType
 } from "./api.js"
-import { AppRoute, fileRouter, urlToAppRoute } from "./route.js"
+import { AppRoute, fileRouter, urlToAppRoute, walkthroughRouter } from "./route.js"
 import { styles } from "./styles.js"
 
 const cx = (...tokens: ReadonlyArray<StyleXStyles>): string =>
@@ -26,12 +33,17 @@ const cx = (...tokens: ReadonlyArray<StyleXStyles>): string =>
 export const Model = S.Struct({
   route: AppRoute,
   tree: S.NullOr(ExplorerSnapshot),
-  selected: S.NullOr(SelectedSource),
+  selected: S.NullOr(AnnotatedSource),
+  walkthrough: S.NullOr(WalkthroughDocument),
   selectedPath: S.NullOr(S.String),
   selectedSymbol: S.NullOr(S.String),
+  focusLine: S.NullOr(S.Number),
   query: S.String,
+  expandedPaths: S.Array(S.String),
+  theme: S.Literals(["light", "dark"]),
   isLoadingTree: S.Boolean,
   isLoadingSource: S.Boolean,
+  isLoadingWalkthrough: S.Boolean,
   error: S.NullOr(S.String)
 })
 export type Model = typeof Model.Type
@@ -40,12 +52,16 @@ export const Message = defineMessageUnion({
   ChangedUrl: { url: S.Any },
   ClickedLink: { request: Navigation.UrlRequest },
   ClickedRefresh: {},
-  ClickedSymbol: { path: S.String, symbol: S.String },
+  ToggledDirectory: { path: S.String },
+  ToggledTheme: {},
   CompletedNavigate: {},
+  CompletedScroll: {},
   FailedFetchSource: { error: S.String },
   FailedFetchTree: { error: S.String },
-  SucceededFetchSource: { selected: SelectedSource },
+  FailedFetchWalkthrough: { error: S.String },
+  SucceededFetchSource: { selected: AnnotatedSource },
   SucceededFetchTree: { tree: ExplorerSnapshot },
+  SucceededFetchWalkthrough: { walkthrough: WalkthroughDocument },
   TypedQuery: { value: S.String }
 })
 export type Message = typeof Message.Type
@@ -61,9 +77,18 @@ const FetchTree = Command.define("FetchTree", {
 const FetchSource = Command.define("FetchSource", {
   args: { path: S.String, symbol: S.NullOr(S.String) },
   messages: [Message.SucceededFetchSource, Message.FailedFetchSource],
-  execute: ({ path, symbol }) => fetchSource(path, symbol).pipe(Effect.match({
+  execute: ({ path, symbol }) => fetchAnnotated(path, symbol).pipe(Effect.match({
     onFailure: (error) => Message.FailedFetchSource({ error }),
     onSuccess: (selected) => Message.SucceededFetchSource({ selected })
+  }))
+})
+
+const FetchWalkthrough = Command.define("FetchWalkthrough", {
+  args: { path: S.String },
+  messages: [Message.SucceededFetchWalkthrough, Message.FailedFetchWalkthrough],
+  execute: ({ path }) => fetchWalkthrough(path).pipe(Effect.match({
+    onFailure: (error) => Message.FailedFetchWalkthrough({ error }),
+    onSuccess: (walkthrough) => Message.SucceededFetchWalkthrough({ walkthrough })
   }))
 })
 
@@ -73,25 +98,60 @@ const Navigate = Command.define("Navigate", {
   execute: ({ url }) => Navigation.pushUrl(url).pipe(Effect.as(Message.CompletedNavigate()))
 })
 
-const initialModel = (route: AppRoute): Model => ({
+const ScrollToLine = Command.define("ScrollToLine", {
+  args: { line: S.Number },
+  messages: [Message.CompletedScroll],
+  execute: ({ line }) => Effect.sync(() => {
+    requestAnimationFrame(() => document.getElementById(`L${line}`)?.scrollIntoView({ block: "center" }))
+  }).pipe(Effect.as(Message.CompletedScroll()))
+})
+
+const hashValue = (url: Url): string | null => Option.getOrNull(url.hash)
+
+const symbolFromUrl = (url: Url): string | null => {
+  const hash = hashValue(url)
+  if (hash?.startsWith("symbol=") !== true) return null
+  try {
+    return decodeURIComponent(hash.slice("symbol=".length)) || null
+  } catch {
+    return null
+  }
+}
+
+const lineFromUrl = (url: Url): number | null => {
+  const match = hashValue(url)?.match(/^L(\d+)$/u)
+  return match === null || match === undefined ? null : Number(match[1])
+}
+
+const fileUrl = (path: string, hash: string | null = null): string =>
+  `${fileRouter({ path })}${hash === null ? "" : `#${hash}`}`
+
+const initialModel = (route: AppRoute, url: Url): Model => ({
   route,
   tree: null,
   selected: null,
+  walkthrough: null,
   selectedPath: route._tag === "File" ? route.path : null,
-  selectedSymbol: null,
+  selectedSymbol: route._tag === "File" ? symbolFromUrl(url) : null,
+  focusLine: route._tag === "File" ? lineFromUrl(url) : null,
   query: "",
+  expandedPaths: [""],
+  theme: "light",
   isLoadingTree: true,
   isLoadingSource: route._tag === "File",
+  isLoadingWalkthrough: route._tag === "Walkthrough",
   error: null
 })
 
 export const init: Runtime.RoutingApplicationInit<Model, Message> = (url) => {
   const route = urlToAppRoute(url)
+  const symbol = route._tag === "File" ? symbolFromUrl(url) : null
   return {
-    model: initialModel(route),
+    model: initialModel(route, url),
     commands: [
       FetchTree(),
-      ...(route._tag === "File" ? [FetchSource({ path: route.path, symbol: null })] : [])
+      ...(route._tag === "File" ? [FetchSource({ path: route.path, symbol })] : []),
+      ...(route._tag === "Walkthrough" ? [FetchWalkthrough({ path: route.path })] : [])
     ]
   }
 }
@@ -102,24 +162,48 @@ export const update = (model: Model, message: Message): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ChangedUrl: ({ url }) => {
       const route = urlToAppRoute(url as Url)
+      if (route._tag === "Walkthrough") {
+        return {
+          model: evo(model, {
+            route: () => route,
+            selected: () => null,
+            selectedPath: () => null,
+            selectedSymbol: () => null,
+            focusLine: () => null,
+            walkthrough: () => null,
+            isLoadingSource: () => false,
+            isLoadingWalkthrough: () => true,
+            error: () => null
+          }),
+          commands: [FetchWalkthrough({ path: route.path })]
+        }
+      }
       if (route._tag !== "File") {
         return { model: evo(model, {
           route: () => route,
           selected: () => null,
           selectedPath: () => null,
           selectedSymbol: () => null,
-          isLoadingSource: () => false
+          focusLine: () => null,
+          walkthrough: () => null,
+          isLoadingSource: () => false,
+          isLoadingWalkthrough: () => false
         }) }
       }
+      const nextUrl = url as Url
+      const symbol = symbolFromUrl(nextUrl)
       return {
         model: evo(model, {
           route: () => route,
           selectedPath: () => route.path,
-          selectedSymbol: () => null,
+          selectedSymbol: () => symbol,
+          focusLine: () => lineFromUrl(nextUrl),
+          walkthrough: () => null,
           isLoadingSource: () => true,
+          isLoadingWalkthrough: () => false,
           error: () => null
         }),
-        commands: [FetchSource({ path: route.path, symbol: null })]
+        commands: [FetchSource({ path: route.path, symbol })]
       }
     },
     ClickedLink: ({ request }) => request._tag === "Internal"
@@ -132,21 +216,26 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       model: evo(model, { isLoadingTree: () => true, error: () => null }),
       commands: [FetchTree()]
     }),
-    ClickedSymbol: ({ path, symbol }) => ({
+    ToggledDirectory: ({ path }) => ({
       model: evo(model, {
-        selectedPath: () => path,
-        selectedSymbol: () => symbol,
-        isLoadingSource: () => true,
-        error: () => null
-      }),
-      commands: [FetchSource({ path, symbol })]
+        expandedPaths: (paths) => paths.includes(path)
+          ? paths.filter((candidate) => candidate !== path)
+          : [...paths, path]
+      })
+    }),
+    ToggledTheme: () => ({
+      model: evo(model, { theme: (theme) => theme === "light" ? "dark" : "light" })
     }),
     CompletedNavigate: () => ({ model }),
+    CompletedScroll: () => ({ model }),
     FailedFetchSource: ({ error }) => ({
       model: evo(model, { isLoadingSource: () => false, error: () => error })
     }),
     FailedFetchTree: ({ error }) => ({
       model: evo(model, { isLoadingTree: () => false, error: () => error })
+    }),
+    FailedFetchWalkthrough: ({ error }) => ({
+      model: evo(model, { isLoadingWalkthrough: () => false, error: () => error })
     }),
     SucceededFetchSource: ({ selected }) => ({
       model: evo(model, {
@@ -155,14 +244,20 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         selectedSymbol: () => selected.qualifiedName,
         isLoadingSource: () => false,
         error: () => null
-      })
+      }),
+      commands: model.focusLine === null ? [] : [ScrollToLine({ line: model.focusLine })]
     }),
     SucceededFetchTree: ({ tree }) => {
-      const first = model.selectedPath === null ? tree.files[0] : undefined
+      const first = model.route._tag === "Explorer" && model.selectedPath === null ? tree.files[0] : undefined
+      const selectedPath = model.selectedPath ?? first?.path
+      const firstDirectories = selectedPath === undefined
+        ? []
+        : selectedPath.split("/").slice(0, -1).map((_, index, parts) => parts.slice(0, index + 1).join("/"))
       return {
         model: evo(model, {
           tree: () => tree,
           selectedPath: (path) => path ?? first?.path ?? null,
+          expandedPaths: (paths) => [...new Set([...paths, ...firstDirectories])],
           isLoadingTree: () => false,
           isLoadingSource: (loading) => loading || first !== undefined,
           error: () => null
@@ -170,6 +265,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         commands: first === undefined ? [] : [FetchSource({ path: first.path, symbol: null })]
       }
     },
+    SucceededFetchWalkthrough: ({ walkthrough }) => ({
+      model: evo(model, {
+        walkthrough: () => walkthrough,
+        isLoadingWalkthrough: () => false,
+        error: () => null
+      })
+    }),
     TypedQuery: ({ value }) => ({ model: evo(model, { query: () => value }) })
   })
 
@@ -195,25 +297,19 @@ const symbolView = (
   file: ExplorerFile,
   declaration: ExplorerDeclaration,
   h: HtmlBuilder<Message>
-): Html => Button.view({
-  onClick: Message.ClickedSymbol({ path: file.path, symbol: declaration.qualifiedName }),
-  toView: ({ button }) => h.button(
-    [
-      ...button,
-      h.Class(cx(styles.symbolButton,
-        model.selectedSymbol === declaration.qualifiedName ? styles.symbolActive : false))
-    ],
-    [
-      h.span([h.Class(cx(styles.kind))], [declaration.kind]),
-      h.span([h.Class(cx(styles.symbolName))], [declaration.qualifiedName]),
-      h.span([h.Class(cx(styles.lineRef))], [lineLabel(declaration)])
-    ]
-  )
-}, h)
+): Html => h.a([
+  h.Href(fileUrl(file.path, `symbol=${encodeURIComponent(declaration.qualifiedName)}`)),
+  h.Class(cx(styles.symbolButton,
+    model.selectedSymbol === declaration.qualifiedName ? styles.symbolActive : false))
+], [
+  h.span([h.Class(cx(styles.kind))], [declaration.kind]),
+  h.span([h.Class(cx(styles.symbolName))], [declaration.qualifiedName]),
+  h.span([h.Class(cx(styles.lineRef))], [lineLabel(declaration)])
+])
 
 const fileView = (model: Model, file: ExplorerFile, h: HtmlBuilder<Message>): Html => {
   const selected = model.selectedPath === file.path
-  return h.li([h.Class(cx(styles.fileRow, selected ? styles.fileRowSelected : false))], [
+  return h.div([h.Class(cx(styles.fileRow, selected ? styles.fileRowSelected : false))], [
     h.a([h.Href(fileRouter({ path: file.path })), h.Class(cx(styles.fileLink))], [
       h.span([h.Class(cx(styles.fileIcon)), h.AriaHidden(true)], ["◆"]),
       h.span([h.Class(cx(styles.fileName)), h.Title(file.path)], [file.path]),
@@ -228,8 +324,41 @@ const fileView = (model: Model, file: ExplorerFile, h: HtmlBuilder<Message>): Ht
   ])
 }
 
+const directoryHasVisibleFiles = (directory: ExplorerDirectoryType, paths: ReadonlySet<string>): boolean =>
+  directory.children.some((child) => child.type === "file"
+    ? paths.has(child.file.path)
+    : directoryHasVisibleFiles(child, paths))
+
+const directoryView = (
+  model: Model,
+  directory: ExplorerDirectoryType,
+  visiblePaths: ReadonlySet<string>,
+  h: HtmlBuilder<Message>,
+  isRoot = false
+): Html => {
+  const expanded = isRoot || model.expandedPaths.includes(directory.path)
+  const children = directory.children.filter((child) => child.type === "file"
+    ? visiblePaths.has(child.file.path)
+    : directoryHasVisibleFiles(child, visiblePaths))
+  return h.div([h.Class(cx(styles.directory)), h.Role("treeitem"), h.AriaExpanded(expanded)], [
+    ...(isRoot ? [] : [h.button([
+      h.OnClick(Message.ToggledDirectory({ path: directory.path })),
+      h.Class(cx(styles.directoryButton))
+    ], [
+        h.span([h.Class(cx(styles.chevron)), h.AriaHidden(true)], [expanded ? "▾" : "▸"]),
+        h.span([], [directory.name]),
+        h.span([h.Class(cx(styles.directoryCount))], [String(children.length)])
+      ])]),
+    ...(expanded ? [h.div([h.Class(cx(styles.treeGroup)), h.Role("group")], children.map((child) =>
+      child.type === "file"
+        ? h.keyed("div")(child.file.path, [], [fileView(model, child.file, h)])
+        : h.keyed("div")(child.path, [], [directoryView(model, child, visiblePaths, h)])))] : [])
+  ])
+}
+
 const sidebarView = (model: Model, h: HtmlBuilder<Message>): Html => {
   const files = visibleFiles(model)
+  const paths = new Set(files.map((file) => file.path))
   return h.aside([h.Class(cx(styles.sidebar))], [
     h.div([h.Class(cx(styles.searchWrap))], [
       Input.view({
@@ -237,16 +366,17 @@ const sidebarView = (model: Model, h: HtmlBuilder<Message>): Html => {
         value: model.query,
         placeholder: "file, symbol, or docs…",
         onInput: (value) => Message.TypedQuery({ value }),
-        toView: ({ input, label }) => h.div([], [
-          h.label([...label, h.Class(cx(styles.searchLabel))], ["Filter the map"]),
-          h.input([...input, h.Class(cx(styles.search))])
-        ])
+        ariaLabel: "Filter the map",
+        attributes: [h.Class(cx(styles.search))]
       }, h)
     ]),
     files.length === 0
       ? h.p([h.Class(cx(styles.emptySide))], [model.isLoadingTree ? "Reading the repository…" : "No matching modules."])
-      : h.ul([h.Class(cx(styles.files))], files.map((file) =>
-        h.keyed("li")(file.path, [], [fileView(model, file, h)])))
+      : model.tree === null
+        ? h.p([h.Class(cx(styles.emptySide))], ["Reading the repository…"])
+        : h.div([h.Class(cx(styles.files)), h.Role("tree"), h.AriaLabel("Repository files")], [
+          directoryView(model, model.tree.tree, paths, h, true)
+        ])
   ])
 }
 
@@ -256,6 +386,76 @@ const selectedDocumentation = (model: Model): string | null => {
   if (file === undefined) return null
   if (model.selectedSymbol === null) return file.documentation
   return file.declarations.find((declaration) => declaration.qualifiedName === model.selectedSymbol)?.documentation ?? null
+}
+
+interface ViewerSegment {
+  readonly content: string
+  readonly start: number
+  readonly color: string | null
+  readonly darkColor: string | null
+  readonly fontStyle: number | null
+  readonly hover: HoverAnnotation | null
+  readonly definition: DefinitionAnnotation | null
+}
+
+const segmentsFor = (
+  token: HighlightedToken,
+  hovers: ReadonlyArray<HoverAnnotation>,
+  definitions: ReadonlyArray<DefinitionAnnotation>
+): ReadonlyArray<ViewerSegment> => {
+  const matchingHovers = hovers.filter((hover) => hover.start < token.end && hover.end > token.start)
+  const matchingDefinitions = definitions.filter((definition) => definition.start < token.end && definition.end > token.start)
+  const boundaries = [...new Set([
+    token.start,
+    token.end,
+    ...matchingHovers.flatMap(({ start, end }) => [Math.max(start, token.start), Math.min(end, token.end)]),
+    ...matchingDefinitions.flatMap(({ start, end }) => [Math.max(start, token.start), Math.min(end, token.end)])
+  ])].sort((left, right) => left - right)
+  return boundaries.slice(0, -1).map((start, index) => {
+    const end = boundaries[index + 1] ?? token.end
+    return {
+      content: token.content.slice(start - token.start, end - token.start),
+      start,
+      color: token.color,
+      darkColor: token.darkColor,
+      fontStyle: token.fontStyle,
+      hover: matchingHovers.find((candidate) => candidate.start <= start && candidate.end >= end) ?? null,
+      definition: matchingDefinitions.find((candidate) => candidate.start <= start && candidate.end >= end) ?? null
+    }
+  })
+}
+
+const segmentView = (model: Model, segment: ViewerSegment, h: HtmlBuilder<Message>): Html => {
+  const style: Record<string, string> = {
+    color: (model.theme === "dark" ? segment.darkColor : segment.color) ?? "inherit",
+    ...(segment.fontStyle === null ? {} : {
+      ...(segment.fontStyle & 1 ? { fontStyle: "italic" } : {}),
+      ...(segment.fontStyle & 2 ? { fontWeight: "700" } : {}),
+      ...(segment.fontStyle & 4 ? { textDecoration: "underline" } : {})
+    })
+  }
+  const content = segment.definition === null
+    ? h.span([h.Style(style)], [segment.content])
+    : h.a([
+      h.Style(style),
+      h.Class(cx(styles.definition)),
+      h.Href(fileUrl(
+        segment.definition.targets[0]?.path ?? model.selectedPath ?? "",
+        `L${segment.definition.targets[0]?.range.start.line ?? 1}`
+      ))
+    ], [segment.content])
+  if (segment.hover === null) return content
+  const hover = segment.hover
+  const title = `${hover.text}${hover.documentation === null ? "" : `\n\n${hover.documentation}`}`
+  return h.span([h.Class("type-hover"), h.Tabindex(0), h.Title(title)], [
+    content,
+    h.span([h.Class(`${cx(styles.hoverCard)} type-card`), h.Role("tooltip")], [
+      h.code([h.Class(cx(styles.hoverSignature))], [hover.text]),
+      ...(hover.documentation === null
+        ? []
+        : [h.p([h.Class(cx(styles.hoverDocumentation))], [hover.documentation])])
+    ])
+  ])
 }
 
 const sourceView = (model: Model, h: HtmlBuilder<Message>): Html => {
@@ -271,8 +471,6 @@ const sourceView = (model: Model, h: HtmlBuilder<Message>): Html => {
   ])
 
   const selected = model.selected
-  const lines = selected.source.split("\n")
-  if (lines.at(-1) === "") lines.pop()
   const range = selected.range.start.line === selected.range.end.line
     ? `L${selected.range.start.line}`
     : `L${selected.range.start.line}–${selected.range.end.line}`
@@ -288,26 +486,108 @@ const sourceView = (model: Model, h: HtmlBuilder<Message>): Html => {
       h.div([h.Class(cx(styles.hash))], [selected.contentHash])
     ]),
     ...(documentation === null ? [] : [h.p([h.Class(cx(styles.documentation))], [documentation])]),
-    h.pre([h.Class(cx(styles.code))], lines.map((line, index) =>
-      h.div([h.Class(cx(styles.codeLine)), h.Key(String(selected.range.start.line + index))], [
-        h.span([h.Class(cx(styles.codeNumber))], [String(selected.range.start.line + index)]),
-        h.code([h.Class(cx(styles.codeText))], [line || " "])
-      ])))
+    h.pre([h.Class(cx(styles.code, model.theme === "dark" ? styles.codeDark : false))], selected.lines.map((line, index) => {
+      const lineNumber = selected.range.start.line + index
+      return h.div([
+        h.Class(`${cx(styles.codeLine)} code-line-anchor${model.focusLine === lineNumber ? " code-line-focused" : ""}`),
+        h.Key(String(lineNumber)),
+        h.Id(`L${lineNumber}`)
+      ], [
+        h.span([h.Class(cx(styles.codeNumber))], [String(lineNumber)]),
+        h.code([h.Class(cx(styles.codeText))], line.length === 0
+          ? [" "]
+          : line.flatMap((token) => segmentsFor(token, selected.hovers, selected.definitions)
+            .map((segment) => segmentView(model, segment, h))))
+      ])
+    }))
+  ])
+}
+
+const walkthroughTargetUrl = (step: WalkthroughStepType): string | null => {
+  if (step.target === undefined) return null
+  if (step.target.symbol !== undefined) {
+    return fileUrl(step.target.path, `symbol=${encodeURIComponent(step.target.symbol)}`)
+  }
+  return fileUrl(step.target.path, step.target.line === undefined ? null : `L${step.target.line}`)
+}
+
+const walkthroughStepsView = (
+  steps: ReadonlyArray<WalkthroughStepType>,
+  h: HtmlBuilder<Message>,
+  prefix = ""
+): Html => h.ol([h.Class(cx(styles.walkthroughSteps))], steps.map((step, index) => {
+  const number = prefix === "" ? `${index + 1}` : `${prefix}.${index + 1}`
+  const targetUrl = walkthroughTargetUrl(step)
+  return h.li([h.Class(cx(styles.walkthroughStep)), h.Key(step.id)], [
+    h.div([h.Class(cx(styles.walkthroughNumber)), h.AriaHidden(true)], [number]),
+    h.div([h.Class(cx(styles.walkthroughStepContent))], [
+      h.div([h.Class(cx(styles.walkthroughStepMeta))], [step.kind]),
+      h.h2([h.Class(cx(styles.walkthroughStepTitle))], [step.title]),
+      h.p([h.Class(cx(styles.walkthroughBody))], [step.body]),
+      ...(targetUrl === null || step.target === undefined ? [] : [
+        h.a([h.Href(targetUrl), h.Class(cx(styles.walkthroughTarget))], [
+          step.target.path,
+          ...(step.target.symbol === undefined ? [] : [h.strong([], [`#${step.target.symbol}`])]),
+          ...(step.target.line === undefined ? [] : [h.span([], [
+            `:L${step.target.line}${step.target.endLine === undefined ? "" : `–${step.target.endLine}`}`
+          ])])
+        ]),
+        ...(step.target.highlight === undefined || step.target.highlight.length === 0
+          ? []
+          : [h.div([h.Class(cx(styles.walkthroughHighlights))], step.target.highlight.map((value) =>
+            h.code([h.Key(value), h.Class(cx(styles.walkthroughHighlight))], [value])))])
+      ]),
+      ...(step.notes.length === 0 ? [] : [h.ul([h.Class(cx(styles.walkthroughNotes))], step.notes.map((note) =>
+        h.li([], [note])))]),
+      ...(step.children.length === 0 ? [] : [walkthroughStepsView(step.children, h, number)])
+    ])
+  ])
+}))
+
+const walkthroughView = (model: Model, h: HtmlBuilder<Message>): Html => {
+  if (model.error !== null) return h.div([h.Class(cx(styles.error)), h.Role("alert")], [model.error])
+  if (model.walkthrough === null) return h.div([h.Class(cx(styles.welcome))], [
+    h.span([h.Class(cx(styles.welcomeKicker))], ["Guided code tour"]),
+    h.h2([h.Class(cx(styles.welcomeTitle))], [model.isLoadingWalkthrough ? "Loading walkthrough…" : "No walkthrough selected."])
+  ])
+  const walkthrough = model.walkthrough
+  return h.article([h.Class(cx(styles.walkthrough))], [
+    h.header([h.Class(cx(styles.walkthroughHeader))], [
+      h.span([h.Class(cx(styles.welcomeKicker))], ["Code walkthrough"]),
+      h.h1([h.Class(cx(styles.walkthroughTitle))], [walkthrough.title]),
+      h.p([h.Class(cx(styles.walkthroughSummary))], [walkthrough.summary]),
+      ...(walkthrough.audience.length === 0 ? [] : [h.div([h.Class(cx(styles.walkthroughAudience))], [
+        "For ", walkthrough.audience.join(" · ")
+      ])])
+    ]),
+    walkthroughStepsView(walkthrough.steps, h)
   ])
 }
 
 const refreshButton = (model: Model, h: HtmlBuilder<Message>): Html => Button.view({
+  label: model.isLoadingTree ? "Reading…" : "Refresh map",
   isDisabled: model.isLoadingTree,
   onClick: Message.ClickedRefresh(),
-  toView: ({ button }) => h.button([...button, h.Class(cx(styles.refresh))], [
-    model.isLoadingTree ? "Reading…" : "Refresh map"
-  ])
+  variant: "outline",
+  size: "sm",
+  style: styles.refresh
+}, h)
+
+const themeButton = (model: Model, h: HtmlBuilder<Message>): Html => Button.view({
+  label: model.theme === "light" ? "Dark" : "Light",
+  onClick: Message.ToggledTheme(),
+  variant: "outline",
+  size: "sm",
+  ariaLabel: `Use ${model.theme === "light" ? "dark" : "light"} code theme`,
+  style: styles.refresh
 }, h)
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
   const changed = model.tree?.files.filter((file) => file.gitStatus !== null).length ?? 0
   return {
-    title: model.selectedPath === null ? "module-ls" : `${model.selectedPath} · module-ls`,
+    title: model.walkthrough !== null
+      ? `${model.walkthrough.title} · module-ls`
+      : model.selectedPath === null ? "module-ls" : `${model.selectedPath} · module-ls`,
     lang: "en",
     body: h.div([h.Class(cx(styles.app))], [
       h.header([h.Class(cx(styles.topbar))], [
@@ -322,13 +602,20 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
           h.span([h.Class(cx(styles.meta))], [
             `${model.tree?.files.length ?? 0} files · ${changed} changed`
           ]),
+          h.a([
+            h.Href(walkthroughRouter({ path: "examples/annotated-source.walkthrough.yaml" })),
+            h.Class(cx(styles.navLink))
+          ], ["Walkthrough"]),
+          themeButton(model, h),
           refreshButton(model, h)
         ])
       ]),
-      h.div([h.Class(cx(styles.layout))], [
-        sidebarView(model, h),
-        h.main([h.Class(cx(styles.main))], [sourceView(model, h)])
-      ])
+      model.route._tag === "Walkthrough"
+        ? h.main([h.Class(cx(styles.walkthroughMain))], [walkthroughView(model, h)])
+        : h.div([h.Class(cx(styles.layout))], [
+          sidebarView(model, h),
+          h.main([h.Class(cx(styles.main))], [sourceView(model, h)])
+        ])
     ])
   }
 }

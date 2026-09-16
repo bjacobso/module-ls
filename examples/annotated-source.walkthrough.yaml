@@ -1,0 +1,68 @@
+schemaVersion: 1
+id: annotated-source-pipeline
+title: From repository source to an annotated code view
+summary: Follow one source request through the schema, type service, annotation pipeline, and browser.
+audience:
+  - contributors
+  - coding agents
+steps:
+  - id: contract
+    kind: orientation
+    title: Start with the wire contract
+    body: Every renderer consumes the same versioned AnnotatedSource value. Its offsets are relative to the selected source block.
+    target:
+      path: src/model.ts
+      symbol: AnnotatedSourceSchema
+      highlight:
+        - lines
+        - hovers
+        - definitions
+    notes:
+      - The content hash lets consumers reject stale annotations.
+    children: []
+  - id: types
+    kind: code
+    title: Ask TypeScript about identifiers
+    body: A lazy language service loads the nearest tsconfig and emits quick-info and in-root definition ranges.
+    target:
+      path: src/typeinfo.ts
+      symbol: typeAnnotations
+    notes:
+      - At most three language services are retained.
+    children: []
+  - id: annotate
+    kind: code
+    title: Combine selection, syntax, and semantics
+    body: The annotation boundary selects exact source, adds dual-theme Shiki tokens, and joins cached type information.
+    target:
+      path: src/annotation.ts
+      symbol: annotateSource
+    notes: []
+    children: []
+  - id: surfaces
+    kind: checkpoint
+    title: Render one document three ways
+    body: The walkthrough itself can be inspected as a CLI tree, encoded JSON, or followed in the web explorer.
+    notes:
+      - Run mls walkthrough examples/annotated-source.walkthrough.yaml.
+      - Add --format json for an agent-facing representation.
+    children:
+      - id: api
+        kind: detour
+        title: Serve annotated source
+        body: The HTTP handler keeps annotation additive to the existing source endpoint.
+        target:
+          path: src/server.ts
+          symbol: serveExplorer
+        notes: []
+        children: []
+      - id: browser
+        kind: detour
+        title: Render ranges as interactive tokens
+        body: The FoldKit client splits highlighted tokens at hover and definition boundaries.
+        target:
+          path: web/src/main.ts
+          line: 401
+          endLine: 455
+        notes: []
+        children: []

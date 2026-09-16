@@ -14,8 +14,9 @@ The product has four coordinated surfaces:
 
 1. compact human-readable tree output;
 2. a complete schema-versioned repository index;
-3. exact `show` and `extract` source selection; and
-4. a local native FoldKit web explorer.
+3. exact `show` and `extract` source selection;
+4. annotated source for static consumers; and
+5. a local native FoldKit web explorer.
 
 It is not a compiler, language server, dependency/call graph, persistent index,
 or multi-language documentation generator.
@@ -28,7 +29,9 @@ The `module-ls` and `mls` bins are equivalent.
 module-ls [options] [path ...]
 module-ls show <file[#symbol]> [--symbol <qualified-name>]
 module-ls extract <file[#symbol]> [--symbol <qualified-name>]
-module-ls serve [path] [--port 4310]
+module-ls annotate <file[#symbol]> [--root <path>] [--no-types]
+module-ls walkthrough <definition.json|yaml> [--format tree|json]
+module-ls serve [path] [--port 4310] [--no-types] [--open]
 ```
 
 No inspection path means `.`. Inspection accepts multiple roots in argument
@@ -79,6 +82,11 @@ Export visibility is derived from syntax—export/default modifiers and local
 export clauses—without invoking the TypeScript type checker. Source files are
 parsed in bounded ts-morph project batches so large monorepos do not accumulate
 every AST in one long-lived project.
+
+Annotated-source requests use a separate, lazy TypeScript language service. It
+loads the nearest in-root `tsconfig.json`, falls back to an `allowJs` bundler
+configuration, and retains at most three services. Shiki and annotation results
+are cached by source fingerprint; ordinary inspection remains syntax-only.
 
 ## 4. Source coordinates
 
@@ -133,6 +141,20 @@ repository-relative paths, fingerprints, documentation, Git status, and
 declarations with qualified names and ranges. Git status comes from
 `git status --short --untracked-files=all` through the Effect 4 child-process
 spawner service. A non-Git directory returns null statuses rather than failing.
+The snapshot additionally carries a recursive directory tree over the same file
+records.
+
+`AnnotatedSourceSchema` version 3 extends a selected source with per-line Shiki
+tokens, TypeScript quick-info ranges, and in-root definition targets. Annotation
+offsets are 0-based UTF-16 code units relative to `source`. Light and dark token
+colors are both present, and hover/definition collections may be empty.
+
+`WalkthroughDocumentSchema` version 1 describes an ordered code tour. A document
+contains an id, title, summary, audiences, and recursive steps. Each step has a
+stable id, kind, narration, notes, children, and an optional source target with
+a path, symbol or line range, and named highlights. JSON, YAML, the fluent
+`Walkthrough.make(...).add(...)` DSL, CLI output, and web rendering all share
+this schema.
 
 ## 6. Rendering and selection
 
@@ -155,6 +177,9 @@ selection through `SelectedSourceSchema`.
 GET /api/tree
 GET /api/source?path=<repository-relative-file>
 GET /api/source?path=<repository-relative-file>&symbol=<qualified-name>
+GET /api/annotated?path=<repository-relative-file>[&symbol=<qualified-name>]
+GET /api/search?q=<query>
+GET /api/walkthrough?path=<repository-relative-json-or-yaml>
 ```
 
 API responses are schema encoded and uncached. Source paths resolve against the
@@ -167,15 +192,17 @@ and recomputes analysis and Git state on refresh.
 `web/` is a native FoldKit SPA on the same Effect 4 RC as the Node package. It
 uses one Schema `Model`, one exhaustive Message union, named Commands for HTTP and
 navigation, `Runtime.makeApplication`, bidirectional route parsers, FoldKit
-virtual DOM, `@foldkit/ui` Button/Input helpers, FoldKit DevTools, Vite, and
+virtual DOM, `@foldworks/ui` controls and theme, FoldKit DevTools, Vite, and
 StyleX. It contains no React compatibility layer.
 
 The workspace pins one Effect version across both packages. Schema-validated
 HTTP JSON remains the runtime boundary between the Node service and browser app.
 
-The UI provides filtering, file routes, qualified symbols, documentation,
-line-numbered exact source, fingerprints, refresh, and Git badges. It does not
-edit files or render full patches.
+The UI provides a recursive tree, filtering, file routes, qualified symbols,
+documentation, highlighted source, type hover, go-to-definition, fingerprints,
+light/dark code themes, refresh, and Git badges. It does not edit files or
+render full patches. `/walkthrough/<definition>` renders schema-validated code
+tours with navigable source targets.
 
 ## 9. Effect architecture
 
@@ -201,8 +228,7 @@ builds CLI declarations, and creates production Vite assets. Browser
 verification covers service rendering, navigation, filtering, exact selection,
 refresh, and console errors.
 
-Deferred work includes nested `.gitignore` semantics, tsconfig-aware resolution,
-class/interface members, syntax highlighting, full patch views, pane resizing,
-watch mode, cached indexes, MCP, additional languages, npm publication, and a
-license. The core must remain fast, read-only, and smaller than a language
-server.
+Deferred work includes nested `.gitignore` semantics, class/interface members,
+full patch views, pane resizing, watch mode/SSE, references, LRU eviction for
+large monorepos, MCP, additional languages, npm publication, and a license. The
+core must remain fast, read-only, and smaller than a language server.
